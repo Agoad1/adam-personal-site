@@ -61,23 +61,23 @@ export default async function WorkoutWidget() {
 
   return (
     <div className="card flex flex-col gap-3">
-      <h3 className="text-sm font-semibold text-accent-cyan uppercase tracking-wider">
+      <h3 className="font-serif text-sm font-bold text-slate-900 uppercase tracking-wider">
         Workout Streak
       </h3>
       <div className="grid grid-cols-3 gap-4 text-center">
         <div>
-          <p className="text-2xl font-bold text-text-primary">{streak}</p>
-          <p className="text-xs text-text-secondary mt-1">Day Streak</p>
+          <p className="font-mono text-2xl font-bold text-slate-900">{streak}</p>
+          <p className="font-serif text-sm font-bold text-slate-800 mt-1 uppercase tracking-wide">Day Streak</p>
         </div>
         <div>
-          <p className="text-2xl font-bold text-text-primary">
+          <p className="font-mono text-2xl font-bold text-slate-900">
             {totalWorkouts}
           </p>
-          <p className="text-xs text-text-secondary mt-1">Total</p>
+          <p className="font-serif text-sm font-bold text-slate-800 mt-1 uppercase tracking-wide">Total</p>
         </div>
         <div>
-          <p className="text-sm font-semibold text-text-primary">{lastType}</p>
-          <p className="text-xs text-text-secondary mt-1">{lastDate}</p>
+          <p className="font-serif text-sm font-bold text-slate-900">{lastType}</p>
+          <p className="font-serif text-sm font-bold text-slate-800 mt-1 uppercase tracking-wide">{lastDate}</p>
         </div>
       </div>
     </div>
