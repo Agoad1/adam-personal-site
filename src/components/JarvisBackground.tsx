@@ -10,85 +10,32 @@ function dist2(ax: number, ay: number, bx: number, by: number) {
   return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2);
 }
 
-// ─── Terminal data ─────────────────────────────────────────────────────────────
 
-function hex4() { return Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, "0"); }
-function ts() {
-  const h = String(Math.floor(Math.random() * 24)).padStart(2, "0");
-  const m = String(Math.floor(Math.random() * 60)).padStart(2, "0");
-  const s = String(Math.floor(Math.random() * 60)).padStart(2, "0");
-  return `${h}:${m}:${s}`;
+
+// ─── Workflow topology (fixed layout, module-level) ───────────────────────────
+
+const WF_NODES = [
+  { nx: -0.72, ny: -0.45, label: "TRIGGER" },
+  { nx: -0.14, ny: -0.45, label: "FILTER" },
+  { nx:  0.44, ny: -0.45, label: "TRANSFORM" },
+  { nx:  0.44, ny:  0.18, label: "API CALL" },
+  { nx: -0.14, ny:  0.52, label: "STORE" },
+];
+const WF_EDGES: [number, number][] = [[0, 1], [1, 2], [2, 3], [3, 4], [1, 4]];
+
+// ─── ECG waveform helpers ─────────────────────────────────────────────────────
+
+function ecgGaussian(x: number, mu: number, sigma: number): number {
+  return Math.exp(-0.5 * ((x - mu) / sigma) ** 2);
 }
-
-const TERMINAL_LINES = [
-  () => `${ts()} >> SYS ${hex4()} PROC`,
-  () => `${ts()} >> NODE [${Math.floor(Math.random() * 99)}] OK`,
-  () => `${ts()} >> DATA ${hex4()} RX`,
-  () => `${ts()} >> SYNC ${Math.random().toFixed(6)}`,
-  () => `${ts()} >> PKT ${hex4()} ACK`,
-  () => `${ts()} >> MEM: ${Math.floor(Math.random() * 100)}%`,
-  () => `${ts()} >> ERR 0x${hex4()} CLR`,
-  () => `${ts()} >> DELTA ${(Math.random() * 9.99).toFixed(3)}`,
-  () => `C:\\> INIT SEQUENCE ${hex4()}`,
-  () => `> PING ${hex4()}:${hex4()} TTL=64`,
-];
-
-const ALERT_LINES = [
-  () => `${ts()} | ALERT: UNIT ${Math.floor(Math.random() * 9) + 1} OFFLINE`,
-  () => `${ts()} | INFO: SYNC COMPLETE`,
-  () => `${ts()} | WARN: LATENCY ${Math.floor(Math.random() * 200) + 10}ms`,
-  () => `${ts()} | ALERT: NODE FAIL ${hex4()}`,
-  () => `${ts()} | OK: HANDSHAKE ${hex4()}`,
-  () => `${ts()} | INFO: PROC ${Math.floor(Math.random() * 99)}% LOAD`,
-  () => `${ts()} | ALERT: MEM THRESHOLD`,
-  () => `${ts()} | OK: BACKUP RESTORED`,
-];
-
-function genTermLine() { return TERMINAL_LINES[Math.floor(Math.random() * TERMINAL_LINES.length)](); }
-function genAlertLine() { return ALERT_LINES[Math.floor(Math.random() * ALERT_LINES.length)](); }
-
-// ─── 3D polyhedron (icosahedron-ish diamond) ──────────────────────────────────
-
-// Vertices of a simple octahedron + elongated tips = diamond-like shape
-const GEO_VERTS_BASE: [number, number, number][] = [
-  [0, 1.6, 0],     // top
-  [0, -1.6, 0],    // bottom
-  [1, 0, 0],       // right
-  [-1, 0, 0],      // left
-  [0, 0, 1],       // front
-  [0, 0, -1],      // back
-  [0.7, 0.5, 0.7], // upper rf
-  [-0.7, 0.5, 0.7],// upper lf
-  [0.7, 0.5, -0.7],// upper rb
-  [-0.7, 0.5, -0.7],// upper lb
-  [0.7, -0.5, 0.7], // lower rf
-  [-0.7, -0.5, 0.7],// lower lf
-  [0.7, -0.5, -0.7],// lower rb
-  [-0.7, -0.5, -0.7],// lower lb
-];
-
-const GEO_EDGES: [number, number][] = [
-  [0,6],[0,7],[0,8],[0,9],
-  [1,10],[1,11],[1,12],[1,13],
-  [6,7],[7,8],[8,9],[9,6],  // won't exist — let's connect them properly
-  [6,10],[7,11],[8,12],[9,13],
-  [10,11],[11,12],[12,13],[13,10],
-  [2,6],[2,8],[2,10],[2,12],
-  [3,7],[3,9],[3,11],[3,13],
-  [4,6],[4,7],[4,10],[4,11],
-  [5,8],[5,9],[5,12],[5,13],
-];
-
-function rotateY(v: [number, number, number], a: number): [number, number, number] {
-  return [v[0] * Math.cos(a) + v[2] * Math.sin(a), v[1], -v[0] * Math.sin(a) + v[2] * Math.cos(a)];
-}
-function rotateX(v: [number, number, number], a: number): [number, number, number] {
-  return [v[0], v[1] * Math.cos(a) - v[2] * Math.sin(a), v[1] * Math.sin(a) + v[2] * Math.cos(a)];
-}
-function project(v: [number, number, number], fov: number): [number, number] {
-  const z = v[2] + 4;
-  const scale = fov / z;
-  return [v[0] * scale, v[1] * scale];
+function ecgSample(phase: number): number {
+  // PQRST waveform — one heartbeat cycle over phase 0→1
+  const p =  ecgGaussian(phase, 0.10, 0.025) * 0.15;
+  const q = -ecgGaussian(phase, 0.18, 0.008) * 0.08;
+  const r =  ecgGaussian(phase, 0.20, 0.012) * 1.0;
+  const s = -ecgGaussian(phase, 0.23, 0.009) * 0.25;
+  const t =  ecgGaussian(phase, 0.35, 0.040) * 0.30;
+  return p + q + r + s + t;
 }
 
 // ─── Panel state ──────────────────────────────────────────────────────────────
@@ -106,23 +53,35 @@ interface PanelState {
   angle: number;        // generic rotation angle
   angle2: number;       // secondary rotation
   pulsePhase: number;   // generic sine phase
-  // panel 2 — terminal
-  termBuffer: string[]; termScroll: number;
-  // panel 3 — health gauges
-  gauge1: number; gauge2: number; latency: number;
-  // panel 4 — geo
-  geoAngleY: number; geoAngleX: number;
-  // panel 5 — bars + alert log
-  bars: number[]; barTargets: number[];
-  alertBuffer: string[]; alertScroll: number;
   // shared progress bars
   progFill: number; progFill2: number;
   skewY: number; scaleX: number;
+  // boot sequence & flicker
+  bootAge: number;      // seconds; starts negative (delay), counts to 0.6 = fully booted
+  flickerMult: number;  // 1 normally, briefly drops near 0 during rare idle flicker
+  flickerTimer: number; // countdown frames to next idle flicker
+  // panel 0 — radar sweep
+  radarAngle: number;
+  radarContacts: { a: number; d: number; lit: number }[];
+  // panel 1 — ECG vitals
+  ecgBuffer: number[];
+  ecgWriteIdx: number;
+  ecgPhase: number;
+  bpm: number;
+  o2: number;
+  // panel 2 — workflow nodes (packets; topology is module-level)
+  wfPackets: { edge: number; t: number; speed: number }[];
+  // panel 3 — gear + bars
+  bars: number[]; barTargets: number[];
+  // panel 4 — pong
+  pongBallX: number; pongBallY: number;
+  pongBallVX: number; pongBallVY: number;
+  pongPaddleL: number; pongPaddleR: number;
+  pongScoreL: number; pongScoreR: number;
+  pongSpeed: number;
 }
 
 function makePanelState(cx: number, cy: number, w: number, h: number, skewY: number, scaleX: number): PanelState {
-  const TBUF = 30;
-  const ABUF = 20;
   return {
     cx, cy, w, h,
     isActive: false, wasActive: false, activePct: 0,
@@ -130,18 +89,41 @@ function makePanelState(cx: number, cy: number, w: number, h: number, skewY: num
     angle: Math.random() * Math.PI * 2,
     angle2: Math.random() * Math.PI * 2,
     pulsePhase: Math.random() * Math.PI * 2,
-    termBuffer: Array.from({ length: TBUF }, genTermLine),
-    termScroll: 0,
-    gauge1: 0.92, gauge2: 0.92, latency: 12,
-    geoAngleY: Math.random() * Math.PI * 2,
-    geoAngleX: 0.3,
-    bars: [0.72, 0.45, 0.88, 0.33, 0.61, 0.78, 0.50, 0.66],
-    barTargets: [0.72, 0.45, 0.88, 0.33, 0.61, 0.78, 0.50, 0.66],
-    alertBuffer: Array.from({ length: ABUF }, genAlertLine),
-    alertScroll: 0,
     progFill: Math.random() * 0.6,
     progFill2: Math.random() * 0.5,
     skewY, scaleX,
+    bootAge: 0,
+    flickerMult: 1,
+    flickerTimer: Math.floor(600 + Math.random() * 540),
+    // panel 0 — radar
+    radarAngle: Math.random() * Math.PI * 2,
+    radarContacts: Array.from({ length: 7 }, () => ({
+      a: Math.random() * Math.PI * 2,
+      d: 0.25 + Math.random() * 0.65,
+      lit: 0,
+    })),
+    // panel 1 — ECG
+    ecgBuffer: new Array(200).fill(0) as number[],
+    ecgWriteIdx: 0,
+    ecgPhase: Math.random(),
+    bpm: 62 + Math.floor(Math.random() * 14),
+    o2: 96 + Math.floor(Math.random() * 4),
+    // panel 2 — workflow
+    wfPackets: Array.from({ length: 6 }, () => ({
+      edge: Math.floor(Math.random() * 5),
+      t: Math.random(),
+      speed: 0.003 + Math.random() * 0.004,
+    })),
+    // panel 3 — gear + bars
+    bars: [0.72, 0.45, 0.88, 0.33, 0.61, 0.78, 0.50, 0.66],
+    barTargets: [0.72, 0.45, 0.88, 0.33, 0.61, 0.78, 0.50, 0.66],
+    // panel 4 — pong
+    pongBallX: 0, pongBallY: 0,
+    pongBallVX: 1.3 * (Math.random() > 0.5 ? 1 : -1),
+    pongBallVY: 0.8 * (Math.random() > 0.5 ? 1 : -1),
+    pongPaddleL: 0, pongPaddleR: 0,
+    pongScoreL: 0, pongScoreR: 0,
+    pongSpeed: 1.0,
   };
 }
 
@@ -253,18 +235,35 @@ function drawPanelFrame(ctx: CanvasRenderingContext2D, p: PanelState) {
   const sc = 1 + 0.04 * activePct;
   ctx.scale(sc, sc);
 
-  // Fill
-  ctx.fillStyle = "rgba(4, 12, 35, 0.75)";
+  // Holographic fill — very light cyan tint, nearly transparent
+  const innerGlow = ctx.createLinearGradient(0, -hh, 0, hh);
+  innerGlow.addColorStop(0,   "rgba(6, 182, 212, 0.07)");
+  innerGlow.addColorStop(0.4, "rgba(6, 182, 212, 0.03)");
+  innerGlow.addColorStop(1,   "rgba(6, 182, 212, 0.01)");
+  ctx.fillStyle = innerGlow;
   ctx.fillRect(-hw, -hh, w, h);
 
-  // Border
+  // Scanlines — subtle horizontal bands across the panel interior
+  ctx.save();
+  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.045)";
+  for (let sy = -hh; sy < hh; sy += 3) {
+    ctx.fillRect(-hw, sy, w, 1);
+  }
+  ctx.restore();
+
+  // Border with cyan glow
+  ctx.shadowColor = "rgba(6, 182, 212, 0.85)";
+  ctx.shadowBlur = lerp(8, 24, activePct);
   ctx.strokeStyle = `rgba(6, 182, 212, ${borderAlpha})`;
   ctx.lineWidth = 1;
   ctx.strokeRect(-hw, -hh, w, h);
 
-  // Corner accent L-marks (12px)
+  // Corner accent L-marks (12px) — brighter than border, own glow
   const cL = 12;
-  ctx.strokeStyle = `rgba(6, 182, 212, ${borderAlpha})`;
+  ctx.shadowColor = "rgba(6, 182, 212, 0.95)";
+  ctx.shadowBlur = lerp(5, 14, activePct);
+  ctx.strokeStyle = `rgba(6, 182, 212, ${Math.min(1, borderAlpha * 1.15)})`;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(-hw + cL, -hh); ctx.lineTo(-hw, -hh); ctx.lineTo(-hw, -hh + cL);
@@ -272,6 +271,7 @@ function drawPanelFrame(ctx: CanvasRenderingContext2D, p: PanelState) {
   ctx.moveTo(-hw + cL, hh);  ctx.lineTo(-hw, hh);  ctx.lineTo(-hw, hh - cL);
   ctx.moveTo(hw - cL, hh);   ctx.lineTo(hw, hh);   ctx.lineTo(hw, hh - cL);
   ctx.stroke();
+  ctx.shadowBlur = 0;
 
   ctx.restore();
 }
@@ -304,13 +304,14 @@ function drawProgressBars(ctx: CanvasRenderingContext2D, p: PanelState, twoRows:
   ctx.restore();
 }
 
-// ─── Panel 1: Dense Code Logs (Replacing Blueprint) ──────────────────────────
+// ─── Panel 0: Sector Radar Sweep ─────────────────────────────────────────────
 
-function drawCodeLogsPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const { cx, cy, w, h, activePct, termBuffer, termScroll, pulsePhase } = p;
+function drawRadarPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
+  const { cx, cy, w, h, activePct, radarAngle, radarContacts } = p;
   const hw = w / 2, hh = h / 2;
   const sc = 1 + 0.04 * activePct;
   const alpha = lerp(0.7, 1.0, activePct);
+  const maxR = Math.min(hw, hh) * 0.82;
 
   ctx.save();
   ctx.translate(cx, cy);
@@ -320,53 +321,97 @@ function drawCodeLogsPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
 
   // Title
   ctx.font = "bold 7px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.9})`;
-  ctx.fillText("SYS.LOG :: KRNL THREAD", -hw + 7, -hh + 12);
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.85})`;
+  ctx.fillText("SECTOR SCAN", -hw + 7, -hh + 10);
 
-  // Line separator
+  // Translate to center for polar drawing
+  ctx.save();
+  ctx.translate(0, 2);
+
+  // Range rings
+  for (let r = 1; r <= 4; r++) {
+    ctx.beginPath();
+    ctx.arc(0, 0, maxR * (r / 4), 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.18})`;
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+
+  // Crosshair lines (N/S/E/W)
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.15})`;
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * maxR, Math.sin(a) * maxR);
+    ctx.stroke();
+  }
+
+  // Sweep afterglow trail (8 steps behind the beam)
+  for (let step = 8; step >= 0; step--) {
+    const trailAngle = radarAngle - step * 0.08;
+    const trailAlpha = alpha * (1 - step / 9) * 0.18;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, maxR, trailAngle - 0.16, trailAngle, false);
+    ctx.closePath();
+    ctx.fillStyle = `rgba(6, 182, 212, ${trailAlpha})`;
+    ctx.fill();
+  }
+
+  // Main sweep beam (bright pie slice)
   ctx.beginPath();
-  ctx.moveTo(-hw + 7, -hh + 16);
-  ctx.lineTo(hw - 7, -hh + 16);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.3})`;
+  ctx.moveTo(0, 0);
+  ctx.arc(0, 0, maxR, radarAngle - 0.16, radarAngle, false);
+  ctx.closePath();
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.28})`;
+  ctx.fill();
+  // Bright leading edge
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(Math.cos(radarAngle) * maxR, Math.sin(radarAngle) * maxR);
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.7})`;
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // Two columns of continuous logs
-  const lh = 9;
-  const visLines = Math.floor((h - 26) / lh);
+  // Contact blips
+  radarContacts.forEach((c) => {
+    if (c.lit <= 0.01) return;
+    const bx = Math.cos(c.a) * c.d * maxR;
+    const by = Math.sin(c.a) * c.d * maxR;
+    ctx.save();
+    ctx.shadowColor = "rgba(6, 182, 212, 0.9)";
+    ctx.shadowBlur = c.lit > 0.5 ? 8 : 3;
+    ctx.beginPath();
+    ctx.arc(bx, by, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * c.lit})`;
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(0, 0, 2, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.7})`;
+  ctx.fill();
+
+  ctx.restore(); // polar translate
+
+  // Coords label bottom-right
   ctx.font = "6px monospace";
-
-  for (let i = 0; i < visLines + 2; i++) {
-    // Left Col
-    const idx1 = (Math.floor(termScroll / lh) + i) % termBuffer.length;
-    const y1 = -hh + 24 + i * lh - (termScroll % lh);
-    if (y1 > -hh + 18 && y1 < hh) {
-      ctx.fillStyle = `rgba(6, 182, 212, ${alpha * clamp((y1 - (-hh + 18)) / 20, 0, 0.7)})`;
-      ctx.fillText(termBuffer[idx1] ?? "", -hw + 8, y1);
-    }
-    
-    // Right Col
-    const idx2 = (Math.floor(termScroll * 1.3 / lh) + i + 7) % termBuffer.length;
-    const y2 = -hh + 24 + i * lh - ((termScroll * 1.3) % lh);
-    if (y2 > -hh + 18 && y2 < hh) {
-      ctx.fillStyle = `rgba(59, 130, 246, ${alpha * clamp((y2 - (-hh + 18)) / 20, 0, 0.7)})`;
-      ctx.fillText(termBuffer[idx2] ?? "", 2, y2);
-    }
-  }
-
-  // Blinking cursor
-  if (Math.sin(pulsePhase * 4) > 0) {
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
-    ctx.fillRect(hw - 12, -hh + 7, 4, 7);
-  }
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.45})`;
+  ctx.textAlign = "right";
+  ctx.fillText("N 047° E", hw - 6, hh - 6);
+  ctx.textAlign = "left";
 
   ctx.restore();
 }
 
-// ─── Panel 1: Mk.3 STABILIZER Blueprint ──────────────────────────────────────
+// ─── Panel 1: ECG Vitals Monitor ─────────────────────────────────────────────
 
-function drawBlueprintPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const { cx, cy, w, h, angle, angle2, activePct } = p;
+function drawEcgPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
+  const { cx, cy, w, h, activePct, ecgBuffer, ecgWriteIdx, bpm, o2 } = p;
   const hw = w / 2, hh = h / 2;
   const sc = 1 + 0.04 * activePct;
   const alpha = lerp(0.7, 1.0, activePct);
@@ -379,418 +424,406 @@ function drawBlueprintPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
 
   // Title
   ctx.font = "bold 7px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.9})`;
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.85})`;
+  ctx.fillText("VITALS MONITOR", -hw + 7, -hh + 10);
+
+  const splitX = hw * 0.30;   // readout column occupies right 30%
+  const waveW = hw + splitX - 4;  // waveform area width
+  const waveLeft = -hw + 4;
+  const waveTop = -hh + 14;
+  const waveH = h - 24;
+
+  // Grid lines (4 horizontal dotted)
+  ctx.save();
+  ctx.setLineDash([2, 4]);
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.1})`;
+  ctx.lineWidth = 0.5;
+  for (let g = 1; g <= 3; g++) {
+    const gy = waveTop + waveH * (g / 4);
+    ctx.beginPath();
+    ctx.moveTo(waveLeft, gy);
+    ctx.lineTo(waveLeft + waveW, gy);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // ECG waveform — ring buffer read from ecgWriteIdx backwards
+  const bufLen = ecgBuffer.length;
+  const waveAmpl = waveH * 0.38;
+  const midY = waveTop + waveH * 0.5;
+
+  // Draw glow pass (blurry, dim) then sharp pass
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.save();
+    if (pass === 0) {
+      ctx.shadowColor = "rgba(6, 182, 212, 0.7)";
+      ctx.shadowBlur = 6;
+      ctx.globalAlpha *= 0.5;
+    }
+    ctx.beginPath();
+    for (let i = 0; i < bufLen; i++) {
+      const bufIdx = ((ecgWriteIdx - bufLen + i) + bufLen * 2) % bufLen;
+      const x = waveLeft + (i / (bufLen - 1)) * waveW;
+      const y = midY - ecgBuffer[bufIdx] * waveAmpl;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * (pass === 0 ? 0.5 : 0.9)})`;
+    ctx.lineWidth = pass === 0 ? 2 : 1.2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Bright dot at latest sample (right edge)
+  const latestY = midY - (ecgBuffer[(ecgWriteIdx - 1 + bufLen) % bufLen]) * waveAmpl;
+  ctx.save();
+  ctx.shadowColor = "rgba(6, 182, 212, 1)";
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+  ctx.arc(waveLeft + waveW, latestY, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
+  ctx.fill();
+  ctx.restore();
+
+  // Divider
+  ctx.beginPath();
+  ctx.moveTo(splitX + 2, -hh + 6);
+  ctx.lineTo(splitX + 2, hh - 6);
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.2})`;
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+
+  // Readout column
+  const readX = splitX + 8;
+  const entries = [
+    { value: String(bpm), label: "BPM", big: true },
+    { value: `${o2}%`, label: "O\u2082 SAT", big: false },
+    { value: "98.2°", label: "TEMP F", big: false },
+  ];
+  let ry = -hh + 22;
+  entries.forEach(({ value, label, big }) => {
+    ctx.font = `bold ${big ? 13 : 10}px monospace`;
+    ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
+    ctx.textAlign = "left";
+    ctx.fillText(value, readX, ry);
+    ry += big ? 11 : 9;
+    ctx.font = "5px monospace";
+    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.55})`;
+    ctx.fillText(label, readX, ry);
+    ry += big ? 16 : 14;
+  });
+  ctx.textAlign = "left";
+
+  ctx.restore();
+}
+
+// ─── Panel 2: Workflow / Automation Nodes ────────────────────────────────────
+
+function drawWorkflowPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
+  const { cx, cy, w, h, activePct, wfPackets } = p;
+  const hw = w / 2, hh = h / 2;
+  const sc = 1 + 0.04 * activePct;
+  const alpha = lerp(0.7, 1.0, activePct);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
+  ctx.scale(sc, sc);
+  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
+
+  // Title
+  ctx.font = "bold 7px monospace";
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.85})`;
+  ctx.fillText("AUTOMATION", -hw + 7, -hh + 10);
+
+  // Resolve node pixel positions
+  const nodeW = 34, nodeH = 12;
+  const nodes = WF_NODES.map(n => ({
+    x: n.nx * hw,
+    y: n.ny * hh,
+    label: n.label,
+  }));
+
+  // Draw edges
+  WF_EDGES.forEach(([a, b]) => {
+    const na = nodes[a], nb = nodes[b];
+    ctx.beginPath();
+    ctx.moveTo(na.x, na.y);
+    ctx.lineTo(nb.x, nb.y);
+    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.22})`;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
+    // Arrowhead at destination
+    const dx = nb.x - na.x, dy = nb.y - na.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const ax = nb.x - ux * (nodeW / 2 + 3);
+    const ay = nb.y - uy * (nodeH / 2 + 3);
+    const px = -uy, py = ux;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax - ux * 5 + px * 3, ay - uy * 5 + py * 3);
+    ctx.lineTo(ax - ux * 5 - px * 3, ay - uy * 5 - py * 3);
+    ctx.closePath();
+    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.35})`;
+    ctx.fill();
+  });
+
+  // Draw data packets
+  ctx.save();
+  ctx.shadowColor = "rgba(6, 182, 212, 0.9)";
+  ctx.shadowBlur = 8;
+  wfPackets.forEach(pk => {
+    const [a, b] = WF_EDGES[pk.edge] ?? [0, 1];
+    const na = nodes[a], nb = nodes[b];
+    const pkx = lerp(na.x, nb.x, pk.t);
+    const pky = lerp(na.y, nb.y, pk.t);
+    ctx.beginPath();
+    ctx.arc(pkx, pky, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.95})`;
+    ctx.fill();
+  });
+  ctx.restore();
+
+  // Draw nodes on top
+  nodes.forEach(n => {
+    const nx = n.x - nodeW / 2, ny = n.y - nodeH / 2;
+    // Rounded rect fill
+    const r = 2;
+    ctx.beginPath();
+    ctx.moveTo(nx + r, ny);
+    ctx.lineTo(nx + nodeW - r, ny);
+    ctx.arcTo(nx + nodeW, ny, nx + nodeW, ny + r, r);
+    ctx.lineTo(nx + nodeW, ny + nodeH - r);
+    ctx.arcTo(nx + nodeW, ny + nodeH, nx + nodeW - r, ny + nodeH, r);
+    ctx.lineTo(nx + r, ny + nodeH);
+    ctx.arcTo(nx, ny + nodeH, nx, ny + nodeH - r, r);
+    ctx.lineTo(nx, ny + r);
+    ctx.arcTo(nx, ny, nx + r, ny, r);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(4, 12, 35, 0.85)";
+    ctx.fill();
+    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.7})`;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    // Label
+    ctx.font = "5px monospace";
+    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.9})`;
+    ctx.textAlign = "center";
+    ctx.fillText(n.label, n.x, n.y + 2);
+    ctx.textAlign = "left";
+  });
+
+  ctx.restore();
+}
+
+// ─── Panel 3: Gear + Bars ─────────────────────────────────────────────────────
+
+function drawGearBarsPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
+  const { cx, cy, w, h, angle, angle2, activePct, bars } = p;
+  const hw = w / 2, hh = h / 2;
+  const sc = 1 + 0.04 * activePct;
+  const alpha = lerp(0.7, 1.0, activePct);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
+  ctx.scale(sc, sc);
+  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
+
+  // Title
+  ctx.font = "bold 7px monospace";
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.85})`;
   ctx.fillText("MK.3 STABILIZER", -hw + 7, -hh + 10);
 
-  // Center gear wheel
-  const gCX = 0, gCY = -4;
-  const outerR = Math.min(hw, hh) * 0.54;
-  const innerR = outerR * 0.58;
+  // ── Gear (top half) ──
+  const gCX = -hw * 0.18;
+  const gCY = -hh * 0.22;
+  const outerR = Math.min(hw, hh) * 0.46;
+  const innerR = outerR * 0.60;
   const coreR  = outerR * 0.28;
 
   // Outer ring
   ctx.beginPath();
   ctx.arc(gCX, gCY, outerR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.6})`;
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.55})`;
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // Gear teeth (24 teeth)
-  const teeth = 24;
+  // Gear teeth (24)
   ctx.save();
   ctx.translate(gCX, gCY);
   ctx.rotate(angle);
-  for (let i = 0; i < teeth; i++) {
-    const a = (i / teeth) * Math.PI * 2;
-    const toothH = outerR * 0.12;
+  const teeth = 24;
+  for (let ti = 0; ti < teeth; ti++) {
+    const a = (ti / teeth) * Math.PI * 2;
+    const tH = outerR * 0.12;
     ctx.save();
     ctx.rotate(a);
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.55})`;
-    ctx.fillRect(-2, -(outerR + toothH), 4, toothH);
+    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.5})`;
+    ctx.fillRect(-2, -(outerR + tH), 4, tH);
     ctx.restore();
   }
-
-  // Middle ring
+  // Inner ring
   ctx.beginPath();
   ctx.arc(0, 0, innerR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.5})`;
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.4})`;
   ctx.lineWidth = 1;
   ctx.stroke();
-
   // Spokes
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2;
+  for (let si = 0; si < 6; si++) {
+    const a = (si / 6) * Math.PI * 2;
     ctx.beginPath();
     ctx.moveTo(Math.cos(a) * coreR, Math.sin(a) * coreR);
     ctx.lineTo(Math.cos(a) * innerR, Math.sin(a) * innerR);
-    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.45})`;
+    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.38})`;
     ctx.lineWidth = 1;
     ctx.stroke();
   }
-
   // Core circle
   ctx.beginPath();
   ctx.arc(0, 0, coreR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.7})`;
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.65})`;
   ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.restore();
 
-  // Small gear bottom-left
-  const sg = { x: -hw + outerR * 0.55, y: hh * 0.45 };
+  // Small gear (bottom-left of big gear)
+  const sgX = gCX - outerR * 0.72;
+  const sgY = gCY + outerR * 0.60;
   const sgR = outerR * 0.28;
   ctx.save();
-  ctx.translate(sg.x, sg.y);
+  ctx.translate(sgX, sgY);
   ctx.rotate(angle2);
   ctx.beginPath();
   ctx.arc(0, 0, sgR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.5})`;
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.45})`;
   ctx.lineWidth = 1;
   ctx.stroke();
   const sgTeeth = 12;
-  for (let i = 0; i < sgTeeth; i++) {
-    const a = (i / sgTeeth) * Math.PI * 2;
-    const tH = sgR * 0.2;
+  for (let ti = 0; ti < sgTeeth; ti++) {
+    const a = (ti / sgTeeth) * Math.PI * 2;
+    const tH = sgR * 0.22;
     ctx.save();
     ctx.rotate(a);
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.45})`;
+    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.42})`;
     ctx.fillRect(-1.2, -(sgR + tH), 2.4, tH);
     ctx.restore();
   }
   ctx.restore();
 
-  // Annotation lines (radiating from outer ring)
-  ctx.font = "6px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.55})`;
-  const annotations = [
-    { a: -0.5, label: "ROTOR FRAME" },
-    { a: 0.8, label: "BEARING" },
-    { a: -2.3, label: "SYNC AXIS" },
-  ];
-  annotations.forEach(({ a, label }) => {
-    const x0 = gCX + Math.cos(a) * (outerR + 4);
-    const y0 = gCY + Math.sin(a) * (outerR + 4);
-    const x1 = gCX + Math.cos(a) * (outerR + 22);
-    const y1 = gCY + Math.sin(a) * (outerR + 22);
-    ctx.beginPath();
-    ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
-    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.35})`;
-    ctx.lineWidth = 0.7;
-    ctx.stroke();
-    ctx.fillText(label, x1 + (Math.cos(a) > 0 ? 2 : -ctx.measureText(label).width - 2), y1 + 3);
-  });
+  // ── Bar chart (right side + bottom) ──
+  const barLabels = ["CPU", "NET", "GPU", "I/O", "SYS", "PWR"];
+  const chartX = gCX + outerR + 10;
+  const chartTop = -hh + 14;
+  const chartH = hh * 0.95;
+  const chartW = hw - chartX - 4;
+  const barCount = barLabels.length;
+  const barW = chartW / barCount - 2;
 
-  ctx.restore();
-}
-
-// ─── Panel 2: Terminal + Radar ────────────────────────────────────────────────
-
-function drawTerminalRadarPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const { cx, cy, w, h, angle, pulsePhase, activePct, termBuffer, termScroll } = p;
-  const hw = w / 2, hh = h / 2;
-  const sc = 1 + 0.04 * activePct;
-  const alpha = lerp(0.7, 1.0, activePct);
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
-  ctx.scale(sc, sc);
-  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
-
-  const splitX = -hw + w * 0.45;
-
-  // ── Left half: terminal text ──
-  ctx.save();
-  ctx.beginPath(); ctx.rect(-hw, -hh, w * 0.45, h); ctx.clip();
-  ctx.font = "7px monospace";
-  const lh = 10;
-  const visLines = Math.ceil(h / lh) + 2;
-  for (let i = 0; i < visLines; i++) {
-    const idx = (Math.floor(termScroll / lh) + i) % termBuffer.length;
-    const y = -hh + i * lh - (termScroll % lh) + 10;
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * lerp(0.35, 0.65, i / visLines)})`;
-    ctx.fillText(termBuffer[idx], -hw + 4, y);
-  }
-  ctx.restore();
-
-  // Divider line
-  ctx.beginPath();
-  ctx.moveTo(splitX, -hh + 6);
-  ctx.lineTo(splitX, hh - 6);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.25})`;
-  ctx.lineWidth = 0.5;
-  ctx.stroke();
-
-  // ── Right half: radar HUD circle ──
-  const rCX = splitX + (hw - splitX) / 2 + (hw - splitX) * 0.05;
-  const rCY = -4;
-  const maxR = Math.min((hw - splitX) * 0.46, hh * 0.72);
-
-  // Outer ring with tick marks
-  ctx.save();
-  ctx.translate(rCX, rCY);
-  ctx.rotate(angle);
-  ctx.beginPath();
-  ctx.arc(0, 0, maxR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(59, 130, 246, ${alpha * 0.55})`;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * Math.PI * 2;
-    const major = i % 4 === 0;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * (maxR - (major ? 6 : 3)), Math.sin(a) * (maxR - (major ? 6 : 3)));
-    ctx.lineTo(Math.cos(a) * maxR, Math.sin(a) * maxR);
-    ctx.strokeStyle = `rgba(59, 130, 246, ${alpha * (major ? 0.7 : 0.35)})`;
-    ctx.lineWidth = major ? 1.5 : 0.7;
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // Middle ring pulsing
-  const midAlpha = lerp(0.3, 0.7, (Math.sin(pulsePhase) + 1) / 2);
-  ctx.beginPath();
-  ctx.arc(rCX, rCY, maxR * 0.68, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(59, 130, 246, ${alpha * midAlpha})`;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Inner partial arc (counter-clockwise)
-  ctx.save();
-  ctx.translate(rCX, rCY);
-  ctx.rotate(-angle * 1.3);
-  ctx.beginPath();
-  ctx.arc(0, 0, maxR * 0.4, 0, Math.PI * 1.7);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.6})`;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.restore();
-
-  // Center glow
-  const cgGrad = ctx.createRadialGradient(rCX, rCY, 0, rCX, rCY, maxR * 0.22);
-  cgGrad.addColorStop(0, `rgba(6, 182, 212, ${alpha * 0.35})`);
-  cgGrad.addColorStop(1, "rgba(6, 182, 212, 0)");
-  ctx.fillStyle = cgGrad;
-  ctx.beginPath();
-  ctx.arc(rCX, rCY, maxR * 0.22, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
-}
-
-// ─── Panel 3: System Health ───────────────────────────────────────────────────
-
-function drawSystemHealthPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const { cx, cy, w, h, activePct, gauge1, gauge2, latency } = p;
-  const hw = w / 2, hh = h / 2;
-  const sc = 1 + 0.04 * activePct;
-  const alpha = lerp(0.7, 1.0, activePct);
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
-  ctx.scale(sc, sc);
-  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
-
-  // Title
-  ctx.font = "bold 7px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.8})`;
-  ctx.fillText("SYSTEM HEALTH", -hw + 7, -hh + 11);
-
-  // Two arc gauges side by side
-  const gaugeY = -hh * 0.22;
-  const gaugeR = Math.min(hw * 0.38, hh * 0.42);
-  const g1X = -hw * 0.44;
-  const g2X = hw * 0.44;
-
-  function drawGauge(gx: number, val: number) {
-    const startA = Math.PI * 0.75;
-    const endA = Math.PI * 2.25;
-    const fillA = startA + (endA - startA) * val;
-    // Track
-    ctx.beginPath();
-    ctx.arc(gx, gaugeY, gaugeR, startA, endA);
-    ctx.strokeStyle = `rgba(59, 130, 246, ${alpha * 0.2})`;
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    // Fill
-    ctx.beginPath();
-    ctx.arc(gx, gaugeY, gaugeR, startA, fillA);
-    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.9})`;
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    // Label
-    ctx.font = `bold ${Math.round(gaugeR * 0.42)}px monospace`;
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
-    ctx.textAlign = "center";
-    ctx.fillText(`${Math.round(val * 100)}%`, gx, gaugeY + gaugeR * 0.18);
-    ctx.textAlign = "left";
-  }
-
-  drawGauge(g1X, gauge1);
-  drawGauge(g2X, gauge2);
-
-  // Gauge labels
-  ctx.font = "7px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.65})`;
-  ctx.textAlign = "center";
-  ctx.fillText("CPU", g1X, gaugeY + gaugeR + 10);
-  ctx.fillText("MEM", g2X, gaugeY + gaugeR + 10);
-  ctx.textAlign = "left";
-
-  // Latency line
-  const latY = hh * 0.22;
-  ctx.font = "8px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.75})`;
-  ctx.textAlign = "center";
-  ctx.fillText(`LATENCY: ${latency}ms`, 0, latY);
-
-  // XJ-09 designation
-  ctx.font = "bold 9px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.55})`;
-  ctx.textAlign = "right";
-  ctx.fillText("XJ-09", hw - 7, hh - 18);
-  ctx.textAlign = "left";
-
-  ctx.restore();
-}
-
-// ─── Panel 4: 3D Geo Visualizer ───────────────────────────────────────────────
-
-function drawGeoPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const { cx, cy, w, h, geoAngleY, geoAngleX, activePct } = p;
-  const hw = w / 2, hh = h / 2;
-  const sc = 1 + 0.04 * activePct;
-  const alpha = lerp(0.7, 1.0, activePct);
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
-  ctx.scale(sc, sc);
-  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
-
-  const fov = Math.min(w, h) * 1.2;
-  const scale3d = Math.min(hw, hh) * 0.52;
-
-  // Project all vertices
-  const projected = GEO_VERTS_BASE.map((v) => {
-    const rv = rotateY(rotateX(v, geoAngleX), geoAngleY);
-    const [px, py] = project(rv, fov);
-    return { px: px * scale3d, py: py * scale3d, z: rv[2] };
-  });
-
-  // Draw edges — back edges dimmer
-  GEO_EDGES.forEach(([a, b]) => {
-    if (a >= projected.length || b >= projected.length) return;
-    const pa = projected[a], pb = projected[b];
-    const avgZ = (pa.z + pb.z) / 2;
-    const depthAlpha = clamp((avgZ + 2) / 4, 0.15, 1);
-    ctx.beginPath();
-    ctx.moveTo(pa.px, pa.py);
-    ctx.lineTo(pb.px, pb.py);
-    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * depthAlpha * 0.75})`;
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-  });
-
-  // Vertex glows
-  projected.forEach(({ px, py, z }) => {
-    const depthAlpha = clamp((z + 2) / 4, 0.2, 1);
-    const vGrad = ctx.createRadialGradient(px, py, 0, px, py, 4);
-    vGrad.addColorStop(0, `rgba(6, 182, 212, ${alpha * depthAlpha * 0.8})`);
-    vGrad.addColorStop(1, "rgba(6, 182, 212, 0)");
-    ctx.fillStyle = vGrad;
-    ctx.beginPath();
-    ctx.arc(px, py, 4, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  // Label
-  ctx.font = "bold 9px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.55})`;
-  ctx.textAlign = "right";
-  ctx.fillText("XJ-09", hw - 7, hh - 18);
-  ctx.textAlign = "left";
-
-  ctx.restore();
-}
-
-// ─── Panel 5: Performance Metrics + Alert Log ─────────────────────────────────
-
-function drawMetricsAlertPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const { cx, cy, w, h, activePct, bars, alertBuffer, alertScroll } = p;
-  const hw = w / 2, hh = h / 2;
-  const sc = 1 + 0.04 * activePct;
-  const alpha = lerp(0.7, 1.0, activePct);
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
-  ctx.scale(sc, sc);
-  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
-
-  // Title
-  ctx.font = "bold 7px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.8})`;
-  ctx.fillText("PERFORMANCE METRICS", -hw + 5, -hh + 11);
-
-  const splitX = -hw + w * 0.32;
-
-  // ── Left: vertical bar chart ──
-  const barLabels = ["CPU", "MEM", "NET", "GPU", "I/O", "DSK", "SYS", "PWR"];
-  const chartH = h * 0.62;
-  const chartTop = -hh + 18;
-  const barCount = bars.length;
-  const barW = ((splitX - (-hw + 4)) / barCount) - 2;
-
-  bars.forEach((val, i) => {
-    const bx = -hw + 4 + i * (barW + 2);
+  barLabels.forEach((label, bi) => {
+    const val = bars[bi] ?? 0.5;
+    const bx = chartX + bi * (barW + 2);
     const bH = chartH * val;
     const by = chartTop + chartH - bH;
-    // Bar track
     ctx.fillStyle = `rgba(59, 130, 246, 0.12)`;
     ctx.fillRect(bx, chartTop, barW, chartH);
-    // Bar fill
     ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.75})`;
     ctx.fillRect(bx, by, barW, bH);
-    // Label
     ctx.font = "5px monospace";
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.55})`;
+    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.5})`;
     ctx.textAlign = "center";
-    ctx.fillText(barLabels[i] ?? "", bx + barW / 2, chartTop + chartH + 7);
+    ctx.fillText(label, bx + barW / 2, chartTop + chartH + 7);
     ctx.textAlign = "left";
   });
 
-  // Divider
+  ctx.restore();
+}
+
+// ─── Panel 4: Pong ───────────────────────────────────────────────────────────
+
+function drawPongPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
+  const {
+    cx, cy, w, h, activePct,
+    pongBallX, pongBallY, pongPaddleL, pongPaddleR,
+    pongScoreL, pongScoreR,
+  } = p;
+  const hw = w / 2, hh = h / 2;
+  // Scale up more than other panels so there's more target area for the paddle
+  const sc = 1 + 0.16 * activePct;
+  const alpha = lerp(0.7, 1.0, activePct);
+  const paddleH = 22, paddleW = 3;
+  const paddleX = hw - 7;
+  const wallB = hh - 16;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
+  ctx.scale(sc, sc);
+  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
+
+  // Title + score
+  ctx.font = "bold 7px monospace";
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.75})`;
+  ctx.fillText("PONG", -hw + 7, -hh + 10);
+  ctx.textAlign = "center";
+  ctx.fillText(`${pongScoreL}  ${pongScoreR}`, 0, -hh + 10);
+  ctx.textAlign = "left";
+
+  // Center dashed divider
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.18})`;
+  ctx.lineWidth = 0.7;
   ctx.beginPath();
-  ctx.moveTo(splitX + 3, -hh + 6);
-  ctx.lineTo(splitX + 3, hh - 6);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.2})`;
-  ctx.lineWidth = 0.5;
+  ctx.moveTo(0, -wallB);
+  ctx.lineTo(0, wallB);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Top / bottom walls
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.3})`;
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(-hw + 4, -wallB); ctx.lineTo(hw - 4, -wallB);
+  ctx.moveTo(-hw + 4,  wallB); ctx.lineTo(hw - 4,  wallB);
   ctx.stroke();
 
-  // ── Right: scrolling alert log ──
+  // Left paddle
   ctx.save();
-  ctx.beginPath();
-  ctx.rect(splitX + 6, -hh + 4, hw - (splitX + 6 - (-hw)), h - 8);
-  ctx.clip();
-
-  const lh = 9;
-  const logX = splitX + 8;
-  const visLines = Math.ceil(h / lh) + 2;
-  ctx.font = "6px monospace";
-
-  for (let i = 0; i < visLines; i++) {
-    const idx = (Math.floor(alertScroll / lh) + i) % alertBuffer.length;
-    const y = -hh + i * lh - (alertScroll % lh) + 10;
-    const line = alertBuffer[idx] ?? "";
-    const isAlert = line.includes("ALERT");
-    ctx.fillStyle = isAlert
-      ? `rgba(6, 182, 212, ${alpha * 0.85})`
-      : `rgba(6, 182, 212, ${alpha * 0.4})`;
-    ctx.fillText(line, logX, y);
+  if (activePct > 0.1) {
+    ctx.shadowColor = "rgba(6, 182, 212, 0.9)";
+    ctx.shadowBlur = lerp(0, 8, activePct);
   }
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
+  ctx.fillRect(-paddleX - paddleW / 2, pongPaddleL - paddleH / 2, paddleW, paddleH);
   ctx.restore();
+
+  // Right paddle
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.75})`;
+  ctx.fillRect(paddleX - paddleW / 2, pongPaddleR - paddleH / 2, paddleW, paddleH);
+
+  // Ball
+  ctx.save();
+  ctx.shadowColor = "rgba(6, 182, 212, 1)";
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.arc(pongBallX, pongBallY, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
+  ctx.fill();
+  ctx.restore();
+
+  // Mouse hint when active
+  if (activePct > 0.5) {
+    ctx.font = "5px monospace";
+    ctx.fillStyle = `rgba(6, 182, 212, ${(activePct - 0.5) * 2 * alpha * 0.6})`;
+    ctx.textAlign = "center";
+    ctx.fillText("← YOUR PADDLE", -hw * 0.45, -hh + 10);
+    ctx.textAlign = "left";
+  }
 
   ctx.restore();
 }
@@ -834,11 +867,11 @@ export default function JarvisBackground() {
     };
 
     const DRAW_FNS = [
-      drawBlueprintPanel,
-      drawTerminalRadarPanel,
-      drawSystemHealthPanel,
-      drawGeoPanel,
-      drawMetricsAlertPanel,
+      drawRadarPanel,
+      drawEcgPanel,
+      drawWorkflowPanel,
+      drawGearBarsPanel,
+      drawPongPanel,
     ];
 
     function init() {
@@ -847,7 +880,12 @@ export default function JarvisBackground() {
       const H = canvas.height = window.innerHeight;
 
       const geom = computePanelGeometry(W, H);
-      state.panels = geom.map(({ cx, cy, w, h, skewY, scaleX }) => makePanelState(cx, cy, w, h, skewY, scaleX));
+      state.panels = geom.map(({ cx, cy, w, h, skewY, scaleX }, i) => {
+        const p = makePanelState(cx, cy, w, h, skewY, scaleX);
+        // Stagger boot: panel 0 starts immediately, each subsequent panel 0.22s later
+        p.bootAge = -(i * 0.22);
+        return p;
+      });
 
       state.particles = Array.from(
         { length: Math.floor(60 + Math.random() * 20) },
@@ -867,56 +905,135 @@ export default function JarvisBackground() {
       state.panels.forEach((p, i) => {
         p.wasActive = p.isActive;
         const d = dist2(mouse.x, mouse.y, p.cx, p.cy);
-        p.isActive = d < 220;
+        p.isActive = d < (i === 4 ? 300 : 220);
         const tgt = p.isActive ? 1 : 0;
         p.activePct = lerp(p.activePct, tgt, p.isActive ? 0.06 : 0.04);
 
         const spd = 1 + p.activePct * 1.5; // 1× idle → 2.5× active
 
-        // Angles
+        // Boot sequence — advance age every frame
+        p.bootAge += DT;
+
+        // Idle flicker — rare, brief opacity drop
+        p.flickerTimer -= 1;
+        if (p.flickerTimer <= 0) {
+          p.flickerMult = 0.08 + Math.random() * 0.15;
+          p.flickerTimer = Math.floor(480 + Math.random() * 540); // 8–17s @ 60fps
+        }
+        // Recover flicker quickly (3–4 frames)
+        if (p.flickerMult < 1) {
+          p.flickerMult = Math.min(1, p.flickerMult + 0.35);
+        }
+
+        // Angles / phase (used by radar, ECG, geo)
         p.angle += 0.006 * spd;
-        p.angle2 -= 0.009 * spd;
         p.pulsePhase += 0.025 * spd;
 
-        // Terminal scroll
-        p.termScroll += 0.5 * spd;
-        if (p.termScroll >= p.termBuffer.length * 10) {
-          p.termScroll = 0;
-          p.termBuffer[Math.floor(Math.random() * p.termBuffer.length)] = genTermLine();
-        }
-
-        // Alert scroll
-        if (i === 4) {
-          p.alertScroll += 0.35 * spd;
-          if (p.alertScroll >= p.alertBuffer.length * 9) {
-            p.alertScroll = 0;
-            p.alertBuffer[Math.floor(Math.random() * p.alertBuffer.length)] = genAlertLine();
-          }
-        }
-
-        // Geo rotation
-        p.geoAngleY += 0.007 * spd;
-        p.geoAngleX += 0.002 * spd;
-
-        // Bars
-        p.bars.forEach((v, j) => {
-          p.bars[j] = lerp(v, p.barTargets[j], 0.008 * spd);
-          if (Math.abs(p.bars[j] - p.barTargets[j]) < 0.01) {
-            p.barTargets[j] = 0.2 + Math.random() * 0.78;
-          }
-        });
-
-        // Progress bars
+        // Progress bars (used by drawProgressBars)
         p.progFill += 0.0018 * spd;
         if (p.progFill > 0.95) p.progFill = 0;
         p.progFill2 += 0.0024 * spd;
         if (p.progFill2 > 0.9) p.progFill2 = 0;
 
-        // Health gauges (slow drift)
+        // Panel 0 — radar sweep + contacts
+        if (i === 0) {
+          const sweepSpd = lerp(0.015, 0.035, p.activePct);
+          p.radarAngle = (p.radarAngle + sweepSpd) % (Math.PI * 2);
+          p.radarContacts.forEach(c => {
+            const diff = Math.abs(((p.radarAngle - c.a + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+            if (diff < 0.15) c.lit = 1.0;
+            else c.lit = Math.max(0, c.lit - 0.005);
+          });
+        }
+
+        // Panel 1 — ECG waveform
+        if (i === 1) {
+          const phaseDelta = (p.bpm / 60 / 60) * lerp(1, 1.3, p.activePct);
+          p.ecgPhase = (p.ecgPhase + phaseDelta) % 1.0;
+          p.ecgBuffer[p.ecgWriteIdx % p.ecgBuffer.length] = ecgSample(p.ecgPhase);
+          p.ecgWriteIdx++;
+          if (Math.random() < 0.002) {
+            p.bpm = clamp(p.bpm + (Math.random() > 0.5 ? 1 : -1), 58, 76);
+          }
+        }
+
+        // Panel 2 — workflow packets
         if (i === 2) {
-          p.gauge1 = 0.88 + Math.sin(p.pulsePhase * 0.3) * 0.06;
-          p.gauge2 = 0.90 + Math.cos(p.pulsePhase * 0.25) * 0.05;
-          p.latency = Math.round(10 + Math.abs(Math.sin(p.pulsePhase * 0.4)) * 18);
+          p.wfPackets.forEach(pk => {
+            pk.t += pk.speed * lerp(1, 2.2, p.activePct);
+            if (pk.t >= 1) {
+              pk.t = 0;
+              pk.edge = Math.floor(Math.random() * WF_EDGES.length);
+              pk.speed = 0.003 + Math.random() * 0.004;
+            }
+          });
+        }
+
+        // Panel 3 — gear rotation + bars
+        if (i === 3) {
+          p.angle += 0.006 * spd;
+          p.angle2 -= 0.009 * spd;
+          p.bars.forEach((v, j) => {
+            p.bars[j] = lerp(v, p.barTargets[j], 0.012 * spd);
+            if (Math.abs(p.bars[j] - p.barTargets[j]) < 0.01) {
+              p.barTargets[j] = 0.15 + Math.random() * 0.82;
+            }
+          });
+        }
+
+        // Panel 4 — pong simulation
+        if (i === 4) {
+          const hw = p.w / 2, hh = p.h / 2;
+          const paddleH = 11;
+          const paddleX = hw - 7;
+          const wallB = hh - 16;
+
+          // Right paddle AI
+          p.pongPaddleR = lerp(p.pongPaddleR, p.pongBallY, 0.045);
+
+          // Left paddle: mouse-driven when active (exact), else AI
+          if (p.isActive) {
+            p.pongPaddleL = clamp(mouse.y - p.cy, -hh + paddleH, hh - paddleH);
+          } else {
+            p.pongPaddleL = lerp(p.pongPaddleL, p.pongBallY, 0.038);
+          }
+          p.pongPaddleL = clamp(p.pongPaddleL, -hh + paddleH, hh - paddleH);
+          p.pongPaddleR = clamp(p.pongPaddleR, -hh + paddleH, hh - paddleH);
+
+          // Move ball
+          p.pongBallX += p.pongBallVX * p.pongSpeed;
+          p.pongBallY += p.pongBallVY * p.pongSpeed;
+
+          // Wall bounce
+          if (p.pongBallY <= -(wallB - 2) || p.pongBallY >= wallB - 2) {
+            p.pongBallVY *= -1;
+            p.pongBallY = clamp(p.pongBallY, -(wallB - 2), wallB - 2);
+          }
+
+          // Left paddle collision
+          if (p.pongBallX <= -paddleX + 4 && p.pongBallX > -paddleX &&
+              Math.abs(p.pongBallY - p.pongPaddleL) < paddleH) {
+            p.pongBallVX = Math.abs(p.pongBallVX);
+            p.pongBallVY += (p.pongBallY - p.pongPaddleL) * 0.08;
+            p.pongSpeed = Math.min(p.pongSpeed + 0.04, 2.0);
+          }
+          // Right paddle collision
+          if (p.pongBallX >= paddleX - 4 && p.pongBallX < paddleX &&
+              Math.abs(p.pongBallY - p.pongPaddleR) < paddleH) {
+            p.pongBallVX = -Math.abs(p.pongBallVX);
+            p.pongBallVY += (p.pongBallY - p.pongPaddleR) * 0.08;
+            p.pongSpeed = Math.min(p.pongSpeed + 0.04, 2.0);
+          }
+
+          // Score + reset
+          if (p.pongBallX < -hw || p.pongBallX > hw) {
+            if (p.pongBallX > hw) p.pongScoreL++;
+            else p.pongScoreR++;
+            p.pongBallX = 0; p.pongBallY = 0;
+            p.pongBallVX = 1.3 * (p.pongBallVX > 0 ? -1 : 1);
+            p.pongBallVY = (Math.random() * 0.5 + 0.2) * (Math.random() > 0.5 ? 1 : -1);
+            p.pongSpeed = 1.0;
+          }
         }
 
         // Pulse ring on cursor entry
@@ -952,7 +1069,7 @@ export default function JarvisBackground() {
       ctx.clearRect(0, 0, W, H);
 
       // 2. Amber LED glow overlay (animated shimmer on top of real desk LED)
-      // drawAmberGlowOverlay(ctx, W, H);
+      drawAmberGlowOverlay(ctx, W, H);
 
       // 3. Panel desk glows
       state.panels.forEach(p => drawPanelDeskGlow(ctx, p, H));
@@ -965,11 +1082,26 @@ export default function JarvisBackground() {
         ctx.fill();
       });
 
-      // 5. Panel frames + content
+      // 5. Panel frames + content (with boot flicker and idle flicker)
       state.panels.forEach((p, i) => {
+        // Not booted yet — skip entirely
+        if (p.bootAge < 0) return;
+
+        // Booting (0 → 0.6s) — flicker the border only
+        if (p.bootAge < 0.6) {
+          const bootFlicker = Math.random() > 0.45 ? Math.random() * 0.9 : 0;
+          ctx.globalAlpha = bootFlicker;
+          drawPanelFrame(ctx, p);
+          ctx.globalAlpha = 1;
+          return;
+        }
+
+        // Fully booted — apply idle flicker multiplier
+        ctx.globalAlpha = p.flickerMult;
         drawPanelFrame(ctx, p);
         DRAW_FNS[i]?.(ctx, p);
         drawProgressBars(ctx, p, true);
+        ctx.globalAlpha = 1;
       });
 
       // 6. Pulse rings

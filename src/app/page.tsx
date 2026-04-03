@@ -16,13 +16,19 @@ function WidgetSkeleton() {
 
 export default function Home() {
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-[58vh] pb-16">
       {/* Hero */}
       <section className="text-center mb-20">
-        <h1 className="heading-display text-5xl sm:text-7xl mb-4 text-text-primary">
+        <p className="font-mono text-xs tracking-[0.3em] text-accent-cyan opacity-70 mb-3 uppercase">
+          Identity // Authorized
+        </p>
+        <h1
+          className="heading-display text-5xl sm:text-7xl mb-4 text-text-primary"
+          style={{ textShadow: "0 0 40px rgba(6,182,212,0.35)" }}
+        >
           Adam Goad
         </h1>
-        <p className="text-xl sm:text-2xl text-accent-cyan font-medium mb-6">
+        <p className="font-mono text-base sm:text-lg text-accent-cyan font-medium mb-6 tracking-wide">
           AI builder. Automation specialist. Systems thinker.
         </p>
         <p className="max-w-2xl mx-auto text-text-secondary text-lg leading-relaxed mb-8">
