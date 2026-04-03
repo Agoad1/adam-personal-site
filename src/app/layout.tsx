@@ -24,6 +24,29 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen flex flex-col antialiased">
+        {/* Base image layer — the room, desk, and physical elements */}
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: -2,
+            backgroundColor: "#03060f",
+          }}
+        >
+          <img
+            src="/Gemini_Generated_Image_ffg8r7ffg8r7ffg8.png"
+            alt=""
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: "center center",
+              opacity: 0.52,
+              display: "block",
+            }}
+          />
+        </div>
+        {/* Canvas overlay — animated panels and effects */}
         <JarvisBackground />
 
         <Navbar />
