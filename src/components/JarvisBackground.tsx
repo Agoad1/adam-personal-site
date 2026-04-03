@@ -189,16 +189,7 @@ function drawAmberGlowOverlay(ctx: CanvasRenderingContext2D, W: number, H: numbe
   ctx.fillStyle = warmGrad;
   ctx.fillRect(0, stripY - 20, W, H - stripY + 40);
 
-  // Animated glow arc on top of the real strip
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(cx, stripY, stripRX, stripRY, 0, Math.PI * 0.08, Math.PI * 0.92);
-  ctx.strokeStyle = "rgba(255, 185, 70, 0.35)";
-  ctx.lineWidth = 4;
-  ctx.shadowColor = "rgba(255, 160, 40, 0.7)";
-  ctx.shadowBlur = 22;
-  ctx.stroke();
-  ctx.restore();
+  // Animated glow arc removed based on user feedback.
 }
 
 // ─── Draw: panel glow on desk ─────────────────────────────────────────────────

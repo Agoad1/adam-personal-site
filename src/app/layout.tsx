@@ -3,6 +3,12 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import JarvisBackground from "@/components/JarvisBackground";
+import ScrollOverlay from "@/components/ScrollOverlay";
+import { Inter, Playfair_Display, Fira_Code } from "next/font/google";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-playfair", display: "swap" });
+const firaCode = Fira_Code({ subsets: ["latin"], variable: "--font-fira", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Adam Goad — AI Builder & Automation Specialist",
@@ -17,13 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body className="min-h-screen flex flex-col antialiased">
+      <body className={`${inter.variable} ${playfair.variable} ${firaCode.variable} min-h-screen flex flex-col antialiased font-sans`}>
         {/* Base image layer — the room, desk, and physical elements */}
         <div
           style={{
@@ -48,6 +48,9 @@ export default function RootLayout({
         </div>
         {/* Canvas overlay — animated panels and effects */}
         <JarvisBackground />
+        
+        {/* Scroll overlay — darkens background on scroll */}
+        <ScrollOverlay />
 
         <Navbar />
         <main className="flex-1">{children}</main>
