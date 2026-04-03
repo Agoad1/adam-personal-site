@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import JarvisBackground from "@/components/JarvisBackground";
 
 export const metadata: Metadata = {
   title: "Adam Goad — AI Builder & Automation Specialist",
@@ -23,21 +24,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen flex flex-col antialiased">
-        {/* Video Background */}
-        <div className="fixed inset-0 -z-20">
-          <video
-            autoPlay
-            muted
-            loop
-            playsInline
-            className="absolute inset-0 w-full h-full object-cover"
-          >
-            <source src="/bg.mp4" type="video/mp4" />
-          </video>
-          <div className="absolute inset-0 bg-navy" />
-        </div>
-        {/* Dark Overlay */}
-        <div className="fixed inset-0 -z-10 bg-[rgba(5,10,20,0.7)]" />
+        <JarvisBackground />
 
         <Navbar />
         <main className="flex-1">{children}</main>
