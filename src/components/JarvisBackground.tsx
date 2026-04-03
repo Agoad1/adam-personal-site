@@ -2,15 +2,18 @@
 
 import { useEffect, useRef } from "react";
 
-interface DataLine {
-  text: string;
-  scrollY: number;
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ProgressBar {
+  fillPct: number;
+  speed: number;
+  target: number;
 }
 
 interface PulseRing {
-  radius: number;
+  startRadius: number;
   maxRadius: number;
-  opacity: number;
+  age: number; // seconds, 0 → 0.6
 }
 
 interface Panel {
@@ -20,12 +23,19 @@ interface Panel {
   height: number;
   vx: number;
   vy: number;
+  zone: "top" | "mid" | "bottom";
   depth: number;
-  dataLines: DataLine[];
+  dataBuffer: string[];
+  bufferHead: number;
+  scrollOffset: number;
   dataScrollSpeed: number;
   hasHUD: boolean;
-  hudAngle: number;
+  hudRadius: number;
+  hudOuterAngle: number;
+  hudInnerAngle: number;
+  hudPulsePhase: number;
   hudSpeed: number;
+  progressBars: ProgressBar[];
   isActive: boolean;
   wasActive: boolean;
   pulseRings: PulseRing[];
@@ -39,78 +49,490 @@ interface Particle {
   vx: number;
   vy: number;
   size: number;
-  trail: { x: number; y: number }[];
 }
 
-function lerp(a: number, b: number, t: number): number {
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const LINE_HEIGHT = 11;
+const BUFFER_SIZE = 20;
+const DT = 1 / 60;
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-function randomHexString(): string {
-  const segments = Math.floor(Math.random() * 3) + 3;
-  const parts: string[] = [];
-  for (let i = 0; i < segments; i++) {
-    parts.push(
-      Math.floor(Math.random() * 0xffff)
-        .toString(16)
-        .toUpperCase()
-        .padStart(4, "0")
-    );
-  }
-  return parts.join(" ");
+function dist(ax: number, ay: number, bx: number, by: number) {
+  return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2);
 }
 
-function createPanel(canvasW: number, canvasH: number): Panel {
-  const depth = Math.random();
-  const width = lerp(80, 300, depth);
-  const height = lerp(50, 160, depth);
-  const x = lerp(width / 2, canvasW - width / 2, Math.random());
-  const y = lerp(height / 2, canvasH - height / 2, Math.random());
-  const speed = 0.15;
-  const angle = Math.random() * Math.PI * 2;
-  const lineCount = Math.floor(Math.random() * 3) + 3;
-  const dataLines: DataLine[] = [];
-  for (let i = 0; i < lineCount; i++) {
-    dataLines.push({ text: randomHexString(), scrollY: Math.random() * height });
-  }
+function rnd() {
+  return Math.random();
+}
+
+function hex4() {
+  return Math.floor(rnd() * 0xffff)
+    .toString(16)
+    .toUpperCase()
+    .padStart(4, "0");
+}
+
+function bin4() {
+  return Math.floor(rnd() * 16)
+    .toString(2)
+    .padStart(4, "0");
+}
+
+// ─── Terminal data generators ─────────────────────────────────────────────────
+
+const lineGens: (() => string)[] = [
+  () => `0x${hex4()} > PROC`,
+  () => `SYS: ${(rnd() * 2).toFixed(3)}ms`,
+  () => `NODE [${Math.floor(rnd() * 99)}] OK`,
+  () => `DATA ${bin4()} ${bin4()}`,
+  () => `${(rnd() * 360).toFixed(1)}° > ${hex4()}`,
+  () => `MEM: ${Math.floor(rnd() * 100)}%`,
+  () => `PKT ${hex4()} RX`,
+  () => `SYNC ${rnd().toFixed(6)}`,
+  () => `[${hex4()}] ACK`,
+  () => `CORE ${Math.floor(rnd() * 8)}: ACTIVE`,
+  () => `ERR 0x${hex4()} CLR`,
+  () => `DELTA ${(rnd() * 9.99).toFixed(3)}`,
+];
+
+function genLine(): string {
+  return lineGens[Math.floor(rnd() * lineGens.length)]();
+}
+
+// ─── Panel factory ────────────────────────────────────────────────────────────
+
+function makePanel(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  zone: Panel["zone"],
+  depth: number
+): Panel {
+  const isBottom = zone === "bottom";
+  const isMid = zone === "mid";
+
+  // Bottom panels sit on the desk — no drift
+  const speed = isBottom ? 0 : lerp(0.02, 0.07, rnd());
+  const angle = rnd() * Math.PI * 2;
+
+  const baseOpacity = isBottom
+    ? lerp(0.55, 0.7, depth)
+    : isMid
+    ? lerp(0.25, 0.5, depth)
+    : lerp(0.07, 0.22, depth);
+
+  const hudRadius = isBottom ? 26 : 18;
+
   return {
     x,
     y,
-    width,
-    height,
-    vx: Math.cos(angle) * speed * Math.random(),
-    vy: Math.sin(angle) * speed * Math.random(),
+    width: w,
+    height: h,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    zone,
     depth,
-    dataLines,
-    dataScrollSpeed: lerp(0.1, 0.4, depth),
-    hasHUD: Math.random() > 0.5,
-    hudAngle: Math.random() * Math.PI * 2,
-    hudSpeed: lerp(0.002, 0.008, Math.random()),
+    dataBuffer: Array.from({ length: BUFFER_SIZE }, genLine),
+    bufferHead: 0,
+    scrollOffset: rnd() * LINE_HEIGHT,
+    dataScrollSpeed: lerp(0.14, 0.48, depth) * (isBottom ? 1.6 : 1),
+    hasHUD: !isBottom ? isMid && rnd() > 0.4 : rnd() > 0.4,
+    hudRadius,
+    hudOuterAngle: rnd() * Math.PI * 2,
+    hudInnerAngle: rnd() * Math.PI * 2,
+    hudPulsePhase: rnd() * Math.PI * 2,
+    hudSpeed: lerp(0.005, 0.015, rnd()),
+    progressBars: Array.from({ length: rnd() > 0.45 ? 2 : 1 }, () => ({
+      fillPct: rnd() * 0.5,
+      speed: lerp(0.001, 0.0038, rnd()),
+      target: lerp(0.4, 0.95, rnd()),
+    })),
     isActive: false,
     wasActive: false,
     pulseRings: [],
-    baseOpacity: lerp(0.2, 0.6, depth),
-    currentOpacity: lerp(0.2, 0.6, depth),
+    baseOpacity,
+    currentOpacity: baseOpacity,
   };
 }
 
-function createParticle(canvasW: number, canvasH: number): Particle {
-  const maxSpeed = 0.4;
-  return {
-    x: Math.random() * canvasW,
-    y: Math.random() * canvasH,
-    vx: (Math.random() - 0.5) * maxSpeed,
-    vy: (Math.random() - 0.5) * maxSpeed,
-    size: Math.random() + 1,
-    trail: [],
-  };
+// ─── Scene initialization ─────────────────────────────────────────────────────
+
+function initPanels(W: number, H: number): Panel[] {
+  const panels: Panel[] = [];
+  const pad = 25;
+
+  // Bottom row: 5-6 panels in a horizontal row across the full width
+  const bottomCount = rnd() > 0.5 ? 6 : 5;
+  const spacing = (W - 2 * pad) / bottomCount;
+  const bTop = H * 0.72;
+  const bBot = H * 0.91;
+  for (let i = 0; i < bottomCount; i++) {
+    const w = lerp(185, 265, rnd());
+    const h = lerp(122, 172, rnd());
+    const baseX = pad + spacing * i + spacing / 2;
+    const x = Math.max(w / 2 + pad, Math.min(W - w / 2 - pad, baseX + (rnd() - 0.5) * spacing * 0.22));
+    const y = lerp(bTop + h / 2 + 4, bBot - h / 2 - 4, rnd());
+    panels.push(makePanel(x, y, w, h, "bottom", lerp(0.82, 1.0, rnd())));
+  }
+
+  // Mid panels: 2-3, floating above desk
+  const midCount = rnd() > 0.5 ? 3 : 2;
+  const mTop = H * 0.38;
+  const mBot = H * 0.67;
+  for (let i = 0; i < midCount; i++) {
+    const w = lerp(100, 152, rnd());
+    const h = lerp(68, 108, rnd());
+    const t = (i + 0.5 + (rnd() - 0.5) * 0.55) / midCount;
+    const x = lerp(w / 2 + 50, W - w / 2 - 50, t);
+    const y = lerp(mTop + h / 2, mBot - h / 2, rnd());
+    panels.push(makePanel(x, y, w, h, "mid", lerp(0.4, 0.65, rnd())));
+  }
+
+  // Top panels: 2-3, barely visible in far background
+  const topCount = rnd() > 0.5 ? 3 : 2;
+  const tTop = H * 0.05;
+  const tBot = H * 0.33;
+  for (let i = 0; i < topCount; i++) {
+    const w = lerp(48, 86, rnd());
+    const h = lerp(32, 55, rnd());
+    const t = (i + 0.5 + (rnd() - 0.5) * 0.5) / topCount;
+    const x = lerp(w / 2 + 50, W - w / 2 - 50, t);
+    const y = lerp(tTop + h / 2, tBot - h / 2, rnd());
+    panels.push(makePanel(x, y, w, h, "top", lerp(0.05, 0.2, rnd())));
+  }
+
+  return panels;
 }
 
-function dist(ax: number, ay: number, bx: number, by: number): number {
-  const dx = ax - bx;
-  const dy = ay - by;
-  return Math.sqrt(dx * dx + dy * dy);
+function initParticles(W: number, H: number): Particle[] {
+  const count = Math.floor(lerp(62, 80, rnd()));
+  return Array.from({ length: count }, () => ({
+    x: rnd() * W,
+    y: rnd() * H,
+    vx: (rnd() - 0.5) * 0.34,
+    vy: (rnd() - 0.5) * 0.34,
+    size: lerp(1.0, 1.5, rnd()),
+  }));
 }
+
+// ─── Draw: desk surface ───────────────────────────────────────────────────────
+
+function drawDeskSurface(ctx: CanvasRenderingContext2D, W: number, H: number) {
+  const y0 = H * 0.85;
+  const grad = ctx.createLinearGradient(0, y0, 0, H);
+  grad.addColorStop(0, "rgba(10, 20, 50, 0)");
+  grad.addColorStop(0.55, "rgba(10, 20, 50, 0.13)");
+  grad.addColorStop(1, "rgba(10, 20, 50, 0.08)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, y0, W, H - y0);
+}
+
+// ─── Draw: panel glow ─────────────────────────────────────────────────────────
+
+function drawPanelGlow(ctx: CanvasRenderingContext2D, panel: Panel, H: number) {
+  const { x, y, width, height, currentOpacity, zone } = panel;
+
+  // Bloom around panel
+  const gw = width * 2.2;
+  const gh = height * 2.2;
+  const bloom = ctx.createRadialGradient(x, y, 0, x, y, Math.max(gw, gh) / 2);
+  bloom.addColorStop(0, `rgba(59, 130, 246, ${currentOpacity * 0.09})`);
+  bloom.addColorStop(1, "rgba(59, 130, 246, 0)");
+  ctx.fillStyle = bloom;
+  ctx.fillRect(x - gw / 2, y - gh / 2, gw, gh);
+
+  // Bottom panels cast downward glow onto desk surface
+  if (zone === "bottom") {
+    const deskY = y + height / 2;
+    const glowH = H - deskY;
+    if (glowH > 0) {
+      const deskGrad = ctx.createLinearGradient(0, deskY, 0, deskY + glowH * 0.6);
+      deskGrad.addColorStop(0, `rgba(59, 130, 246, ${currentOpacity * 0.055})`);
+      deskGrad.addColorStop(1, "rgba(59, 130, 246, 0)");
+      ctx.fillStyle = deskGrad;
+      ctx.fillRect(x - width / 2 - 18, deskY, width + 36, glowH * 0.6);
+    }
+  }
+}
+
+// ─── Draw: individual panel ───────────────────────────────────────────────────
+
+function drawPanel(ctx: CanvasRenderingContext2D, panel: Panel) {
+  const {
+    x, y, width: w, height: h,
+    currentOpacity, baseOpacity, zone,
+    hasHUD, hudRadius, hudOuterAngle, hudInnerAngle, hudPulsePhase,
+    progressBars, dataBuffer, bufferHead, scrollOffset,
+  } = panel;
+
+  const activePct = Math.max(0, Math.min(1, (currentOpacity - baseOpacity) / 0.38));
+  const scale = 1 + 0.04 * activePct;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  const hw = w / 2;
+  const hh = h / 2;
+
+  // Interior fill
+  ctx.fillStyle = `rgba(4, 12, 35, ${Math.min(0.92, 0.7 * currentOpacity + 0.12)})`;
+  ctx.fillRect(-hw, -hh, w, h);
+
+  // Border — idle 0.6, active 1.0
+  const borderAlpha = lerp(0.6, 1.0, activePct);
+  ctx.strokeStyle = `rgba(59, 130, 246, ${borderAlpha})`;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-hw, -hh, w, h);
+
+  // Corner accent marks (12px legs)
+  const cLen = 12;
+  ctx.strokeStyle = `rgba(59, 130, 246, ${borderAlpha * 1.1})`;
+  ctx.lineWidth = 1.5;
+  // TL
+  ctx.beginPath(); ctx.moveTo(-hw + cLen, -hh); ctx.lineTo(-hw, -hh); ctx.lineTo(-hw, -hh + cLen); ctx.stroke();
+  // TR
+  ctx.beginPath(); ctx.moveTo(hw - cLen, -hh); ctx.lineTo(hw, -hh); ctx.lineTo(hw, -hh + cLen); ctx.stroke();
+  // BL
+  ctx.beginPath(); ctx.moveTo(-hw + cLen, hh); ctx.lineTo(-hw, hh); ctx.lineTo(-hw, hh - cLen); ctx.stroke();
+  // BR
+  ctx.beginPath(); ctx.moveTo(hw - cLen, hh); ctx.lineTo(hw, hh); ctx.lineTo(hw, hh - cLen); ctx.stroke();
+
+  // ── Data lines ──────────────────────────────────────────
+  // Reserve bottom area for progress bars (22px)
+  const dataAreaH = h - 28;
+  const fontSize = zone === "bottom" ? 9 : zone === "mid" ? 8 : 7;
+  const lh = LINE_HEIGHT;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-hw + 5, -hh + 5, w - 10, Math.max(0, dataAreaH));
+  ctx.clip();
+  ctx.font = `${fontSize}px monospace`;
+  ctx.fillStyle = `rgba(6, 182, 212, ${currentOpacity * 0.6})`;
+  const visCount = Math.ceil(dataAreaH / lh) + 2;
+  for (let i = 0; i < visCount; i++) {
+    const idx = (bufferHead + i) % BUFFER_SIZE;
+    const lineY = -hh + 5 + lh * i - scrollOffset;
+    ctx.fillText(dataBuffer[idx], -hw + 7, lineY + fontSize);
+  }
+  ctx.restore();
+
+  // ── HUD wheel ────────────────────────────────────────────
+  if (hasHUD) {
+    const hr = hudRadius;
+    const hudX = hw - hr - 8;
+    const hudY = -hh + hr + 8;
+    const hAlpha = currentOpacity * 0.85;
+
+    // Outer ring (clockwise) with tick marks
+    ctx.save();
+    ctx.translate(hudX, hudY);
+    ctx.rotate(hudOuterAngle);
+    ctx.beginPath();
+    ctx.arc(0, 0, hr, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(59, 130, 246, ${hAlpha * 0.5})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const major = i % 3 === 0;
+      const r0 = major ? hr - 5 : hr - 3;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+      ctx.lineTo(Math.cos(a) * hr, Math.sin(a) * hr);
+      ctx.strokeStyle = `rgba(59, 130, 246, ${hAlpha * (major ? 0.7 : 0.38)})`;
+      ctx.lineWidth = major ? 1.5 : 0.7;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Middle ring — pulses opacity 0.3 → 0.7
+    const midAlpha = lerp(0.3, 0.7, (Math.sin(hudPulsePhase) + 1) / 2);
+    ctx.beginPath();
+    ctx.arc(hudX, hudY, Math.round(hr * 0.73), 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(59, 130, 246, ${hAlpha * midAlpha})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Inner ring (counter-clockwise, partial arc)
+    ctx.save();
+    ctx.translate(hudX, hudY);
+    ctx.rotate(hudInnerAngle);
+    ctx.beginPath();
+    ctx.arc(0, 0, Math.round(hr * 0.46), 0, Math.PI * 1.65);
+    ctx.strokeStyle = `rgba(59, 130, 246, ${hAlpha * 0.5})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+
+    // Center dot
+    ctx.beginPath();
+    ctx.arc(hudX, hudY, 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(59, 130, 246, ${hAlpha})`;
+    ctx.fill();
+  }
+
+  // ── Progress bars (bottom of panel) ──────────────────────
+  const barW = w - 16;
+  const barH = 2;
+  const barGap = 5;
+  const totalBarBlock = progressBars.length * (barH + barGap) - barGap;
+  let barY = hh - 9 - totalBarBlock;
+
+  progressBars.forEach((bar) => {
+    // Track
+    ctx.fillStyle = `rgba(59, 130, 246, ${currentOpacity * 0.18})`;
+    ctx.fillRect(-hw + 8, barY, barW, barH);
+    // Fill
+    ctx.fillStyle = `rgba(6, 182, 212, ${currentOpacity * 0.65})`;
+    ctx.fillRect(-hw + 8, barY, barW * bar.fillPct, barH);
+    barY += barH + barGap;
+  });
+
+  ctx.restore();
+}
+
+// ─── Draw: pulse rings ────────────────────────────────────────────────────────
+
+function drawPulseRings(ctx: CanvasRenderingContext2D, panels: Panel[]) {
+  panels.forEach((panel) => {
+    panel.pulseRings.forEach((ring) => {
+      const progress = ring.age / 0.6;
+      if (progress >= 1) return;
+      const radius = lerp(ring.startRadius, ring.maxRadius, progress);
+      const opacity = 0.4 * (1 - progress);
+      ctx.beginPath();
+      ctx.arc(panel.x, panel.y, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(59, 130, 246, ${opacity})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  });
+}
+
+// ─── Draw: particles ──────────────────────────────────────────────────────────
+
+function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]) {
+  ctx.fillStyle = "rgba(59, 130, 246, 0.4)";
+  particles.forEach((p) => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// ─── Update: panels ───────────────────────────────────────────────────────────
+
+function updatePanels(
+  panels: Panel[],
+  mouse: { x: number; y: number },
+  W: number,
+  H: number
+) {
+  panels.forEach((panel) => {
+    panel.wasActive = panel.isActive;
+
+    // Drift (top/mid panels only — bottom panels sit on desk)
+    if (panel.vx !== 0 || panel.vy !== 0) {
+      panel.x += panel.vx;
+      panel.y += panel.vy;
+      const hw = panel.width / 2;
+      const hh = panel.height / 2;
+      if (panel.x - hw < 0) { panel.x = hw; panel.vx *= -1; }
+      if (panel.x + hw > W) { panel.x = W - hw; panel.vx *= -1; }
+      if (panel.y - hh < 0) { panel.y = hh; panel.vy *= -1; }
+      if (panel.y + hh > H) { panel.y = H - hh; panel.vy *= -1; }
+    }
+
+    // Mouse proximity (220px)
+    const d = dist(mouse.x, mouse.y, panel.x, panel.y);
+    panel.isActive = d < 220;
+    const mult = panel.isActive ? 2.5 : 1;
+
+    // HUD animation
+    panel.hudOuterAngle += panel.hudSpeed * mult;          // clockwise
+    panel.hudInnerAngle -= panel.hudSpeed * 0.68 * mult;  // counter-clockwise
+    panel.hudPulsePhase += 0.02 * mult;
+
+    // Data scroll — new line enters at bottom as old exits top
+    panel.scrollOffset += panel.dataScrollSpeed * mult;
+    if (panel.scrollOffset >= LINE_HEIGHT) {
+      panel.scrollOffset -= LINE_HEIGHT;
+      const old = panel.bufferHead;
+      panel.bufferHead = (panel.bufferHead + 1) % BUFFER_SIZE;
+      panel.dataBuffer[old] = genLine(); // refresh scrolled-off line
+    }
+
+    // Progress bars
+    panel.progressBars.forEach((bar) => {
+      bar.fillPct += bar.speed * mult;
+      if (bar.fillPct >= bar.target) {
+        bar.fillPct = 0;
+        bar.target = lerp(0.4, 0.95, Math.random());
+      }
+    });
+
+    // Opacity — lerp toward target (active = base + 0.38, capped at 1.0)
+    const targetOpacity = panel.isActive
+      ? Math.min(1.0, panel.baseOpacity + 0.38)
+      : panel.baseOpacity;
+    panel.currentOpacity = lerp(
+      panel.currentOpacity,
+      targetOpacity,
+      panel.isActive ? 0.065 : 0.042
+    );
+
+    // Spawn pulse ring on cursor entry
+    if (panel.isActive && !panel.wasActive) {
+      const startR = Math.max(panel.width, panel.height) / 2;
+      panel.pulseRings.push({
+        startRadius: startR,
+        maxRadius: startR * 1.5,
+        age: 0,
+      });
+    }
+
+    // Age and cull pulse rings
+    panel.pulseRings = panel.pulseRings.filter((r) => r.age < 0.6);
+    panel.pulseRings.forEach((ring) => { ring.age += DT; });
+  });
+}
+
+// ─── Update: particles ────────────────────────────────────────────────────────
+
+function updateParticles(
+  particles: Particle[],
+  mouse: { x: number; y: number },
+  W: number,
+  H: number
+) {
+  particles.forEach((p) => {
+    const md = dist(mouse.x, mouse.y, p.x, p.y);
+    if (md < 160 && md > 1) {
+      const force = (1 - md / 160) * 0.024;
+      p.vx += ((mouse.x - p.x) / md) * force;
+      p.vy += ((mouse.y - p.y) / md) * force;
+    }
+    const spd = Math.sqrt(p.vx ** 2 + p.vy ** 2);
+    if (spd > 1.0) { p.vx = (p.vx / spd); p.vy = (p.vy / spd); }
+    p.x += p.vx;
+    p.y += p.vy;
+    if (p.x < 0) p.x = W;
+    if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H;
+    if (p.y > H) p.y = 0;
+  });
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function JarvisBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -122,153 +544,19 @@ export default function JarvisBackground() {
     if (!ctx) return;
 
     let animFrameId: number;
-    const mouse = { x: -1000, y: -1000 };
-    const PANEL_COUNT = 10;
-    const PARTICLE_COUNT = 100;
-
+    const mouse = { x: -9999, y: -9999 };
     let panels: Panel[] = [];
     let particles: Particle[] = [];
 
     function resize() {
-      if (!canvas) return;
+      if (!canvas || !ctx) return;
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      panels = Array.from({ length: PANEL_COUNT }, () =>
-        createPanel(canvas.width, canvas.height)
-      );
-      particles = Array.from({ length: PARTICLE_COUNT }, () =>
-        createParticle(canvas.width, canvas.height)
-      );
-    }
-
-    function drawCornerAccents(
-      cx: number,
-      cy: number,
-      w: number,
-      h: number,
-      opacity: number
-    ) {
-      if (!ctx) return;
-      const len = 10;
-      const x0 = cx - w / 2;
-      const y0 = cy - h / 2;
-      const x1 = cx + w / 2;
-      const y1 = cy + h / 2;
-      ctx.strokeStyle = `rgba(59, 130, 246, ${opacity})`;
-      ctx.lineWidth = 1.5;
-      // top-left
-      ctx.beginPath();
-      ctx.moveTo(x0 + len, y0);
-      ctx.lineTo(x0, y0);
-      ctx.lineTo(x0, y0 + len);
-      ctx.stroke();
-      // top-right
-      ctx.beginPath();
-      ctx.moveTo(x1 - len, y0);
-      ctx.lineTo(x1, y0);
-      ctx.lineTo(x1, y0 + len);
-      ctx.stroke();
-      // bottom-left
-      ctx.beginPath();
-      ctx.moveTo(x0 + len, y1);
-      ctx.lineTo(x0, y1);
-      ctx.lineTo(x0, y1 - len);
-      ctx.stroke();
-      // bottom-right
-      ctx.beginPath();
-      ctx.moveTo(x1 - len, y1);
-      ctx.lineTo(x1, y1);
-      ctx.lineTo(x1, y1 - len);
-      ctx.stroke();
-    }
-
-    function drawHUD(
-      cx: number,
-      cy: number,
-      angle: number,
-      opacity: number
-    ) {
-      if (!ctx) return;
-      const radii = [12, 20, 30];
-      radii.forEach((r, i) => {
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(angle + (i * Math.PI) / 4);
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 1.5);
-        ctx.strokeStyle = `rgba(6, 182, 212, ${opacity * 0.6})`;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.restore();
-      });
-      // center dot
-      ctx.beginPath();
-      ctx.arc(cx, cy, 2, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(6, 182, 212, ${opacity * 0.8})`;
-      ctx.fill();
-    }
-
-    function drawPanel(panel: Panel) {
-      if (!ctx) return;
-      const { x, y, width, height, currentOpacity, isActive, hasHUD, hudAngle } = panel;
-      const scale = isActive ? lerp(1.0, 1.05, Math.min(1, currentOpacity * 1.2)) : 1.0;
-
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(scale, scale);
-
-      const hw = width / 2;
-      const hh = height / 2;
-
-      // Panel fill
-      ctx.fillStyle = `rgba(6, 20, 50, ${0.3 * currentOpacity * 1.5})`;
-      ctx.fillRect(-hw, -hh, width, height);
-
-      // Border
-      ctx.strokeStyle = `rgba(59, 130, 246, ${currentOpacity})`;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(-hw, -hh, width, height);
-
-      // Corner accents
-      drawCornerAccents(0, 0, width, height, currentOpacity * 1.2);
-
-      // Clipped data text
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(-hw + 4, -hh + 4, width - 8, height - 8);
-      ctx.clip();
-
-      const lineSpacing = Math.min(14, (height - 8) / panel.dataLines.length);
-      ctx.font = "9px monospace";
-      ctx.fillStyle = `rgba(6, 182, 212, ${currentOpacity * 0.7})`;
-
-      panel.dataLines.forEach((line, i) => {
-        const baseY = -hh + 4 + i * lineSpacing;
-        const textY = baseY + (line.scrollY % lineSpacing);
-        // draw current and wrapped line
-        ctx.fillText(line.text, -hw + 6, textY);
-        ctx.fillText(line.text, -hw + 6, textY - lineSpacing * panel.dataLines.length);
-      });
-
-      ctx.restore();
-
-      // HUD
-      if (hasHUD) {
-        drawHUD(0, 0, hudAngle, currentOpacity);
-      }
-
-      ctx.restore();
-    }
-
-    function drawPulseRings(panel: Panel) {
-      if (!ctx) return;
-      panel.pulseRings.forEach((ring) => {
-        ctx.beginPath();
-        ctx.arc(panel.x, panel.y, ring.radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(59, 130, 246, ${ring.opacity})`;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      });
+      // Full initial fill so background is #03060f immediately
+      ctx.fillStyle = "#03060f";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      panels = initPanels(canvas.width, canvas.height);
+      particles = initParticles(canvas.width, canvas.height);
     }
 
     function animate() {
@@ -276,147 +564,41 @@ export default function JarvisBackground() {
       const W = canvas.width;
       const H = canvas.height;
 
-      // Trail fill
-      ctx.fillStyle = "rgba(3, 6, 15, 0.15)";
+      // Slight trail — not a full clear, creates motion smear
+      ctx.fillStyle = "rgba(3, 6, 15, 0.2)";
       ctx.fillRect(0, 0, W, H);
 
-      // Update panels
-      panels.forEach((panel) => {
-        panel.wasActive = panel.isActive;
+      const topPanels = panels.filter((p) => p.zone === "top");
+      const midPanels = panels.filter((p) => p.zone === "mid");
+      const botPanels = panels.filter((p) => p.zone === "bottom");
 
-        // Move
-        panel.x += panel.vx;
-        panel.y += panel.vy;
+      // Draw order per spec:
+      // 1. Desk surface gradient
+      drawDeskSurface(ctx, W, H);
 
-        // Bounce
-        const hw = panel.width / 2;
-        const hh = panel.height / 2;
-        if (panel.x - hw < 0) { panel.x = hw; panel.vx *= -1; }
-        if (panel.x + hw > W) { panel.x = W - hw; panel.vx *= -1; }
-        if (panel.y - hh < 0) { panel.y = hh; panel.vy *= -1; }
-        if (panel.y + hh > H) { panel.y = H - hh; panel.vy *= -1; }
+      // 2. Background panel glows (far back panels)
+      topPanels.forEach((p) => drawPanelGlow(ctx, p, H));
+      midPanels.forEach((p) => drawPanelGlow(ctx, p, H));
 
-        // Mouse proximity
-        const d = dist(mouse.x, mouse.y, panel.x, panel.y);
-        panel.isActive = d < 200;
-        const speedMult = panel.isActive ? 3 : 1;
+      // 3. Background panels (top zone — barely there)
+      topPanels.forEach((p) => drawPanel(ctx, p));
 
-        // HUD
-        panel.hudAngle += panel.hudSpeed * speedMult;
+      // 4. Mid panels
+      midPanels.forEach((p) => drawPanel(ctx, p));
 
-        // Data scroll
-        panel.dataLines.forEach((line) => {
-          line.scrollY += panel.dataScrollSpeed * speedMult;
-          if (line.scrollY > panel.height) line.scrollY = 0;
-        });
+      // 5. Particles (float across all zones)
+      drawParticles(ctx, particles);
 
-        // Opacity lerp
-        const targetOpacity = panel.isActive
-          ? lerp(0.75, 0.95, panel.baseOpacity)
-          : panel.baseOpacity;
-        panel.currentOpacity = lerp(panel.currentOpacity, targetOpacity, 0.05);
+      // 6. Main desk panels — glow first, then panel on top
+      botPanels.forEach((p) => drawPanelGlow(ctx, p, H));
+      botPanels.forEach((p) => drawPanel(ctx, p));
 
-        // Pulse ring on entry
-        if (panel.isActive && !panel.wasActive) {
-          panel.pulseRings.push({ radius: 10, maxRadius: 80, opacity: 0.5 });
-        }
+      // 7. Pulse rings (always on top of panels)
+      drawPulseRings(ctx, panels);
 
-        // Update pulse rings
-        panel.pulseRings = panel.pulseRings.filter((ring) => ring.opacity > 0.01);
-        panel.pulseRings.forEach((ring) => {
-          ring.radius += (ring.maxRadius - ring.radius) * 0.06;
-          ring.opacity *= 0.93;
-        });
-      });
-
-      // Connection lines between close panels
-      for (let i = 0; i < panels.length; i++) {
-        for (let j = i + 1; j < panels.length; j++) {
-          const d = dist(panels[i].x, panels[i].y, panels[j].x, panels[j].y);
-          if (d < 300) {
-            const alpha = (1 - d / 300) * 0.12;
-            ctx.beginPath();
-            ctx.moveTo(panels[i].x, panels[i].y);
-            ctx.lineTo(panels[j].x, panels[j].y);
-            ctx.strokeStyle = `rgba(59, 130, 246, ${alpha})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        }
-      }
-
-      // Draw panels + pulse rings
-      panels.forEach((panel) => {
-        drawPanel(panel);
-        drawPulseRings(panel);
-      });
-
-      // Update & draw particles
-      particles.forEach((p) => {
-        // Cursor attraction
-        const md = dist(mouse.x, mouse.y, p.x, p.y);
-        if (md < 150 && md > 0) {
-          const force = (1 - md / 150) * 0.03;
-          p.vx += ((mouse.x - p.x) / md) * force;
-          p.vy += ((mouse.y - p.y) / md) * force;
-        }
-
-        // Speed cap
-        const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-        if (speed > 1.2) {
-          p.vx = (p.vx / speed) * 1.2;
-          p.vy = (p.vy / speed) * 1.2;
-        }
-
-        // Trail
-        p.trail.push({ x: p.x, y: p.y });
-        if (p.trail.length > 7) p.trail.shift();
-
-        p.x += p.vx;
-        p.y += p.vy;
-
-        // Wrap edges
-        if (p.x < 0) p.x = W;
-        if (p.x > W) p.x = 0;
-        if (p.y < 0) p.y = H;
-        if (p.y > H) p.y = 0;
-
-        // Draw trail
-        p.trail.forEach((pt, i) => {
-          const trailOpacity = (i / p.trail.length) * 0.15;
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, p.size * 0.5, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(59, 130, 246, ${trailOpacity})`;
-          ctx.fill();
-        });
-
-        // Draw particle
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(59, 130, 246, 0.5)";
-        ctx.fill();
-
-        // Panel corner connection lines
-        panels.forEach((panel) => {
-          const corners = [
-            { x: panel.x - panel.width / 2, y: panel.y - panel.height / 2 },
-            { x: panel.x + panel.width / 2, y: panel.y - panel.height / 2 },
-            { x: panel.x - panel.width / 2, y: panel.y + panel.height / 2 },
-            { x: panel.x + panel.width / 2, y: panel.y + panel.height / 2 },
-          ];
-          corners.forEach((corner) => {
-            const cd = dist(p.x, p.y, corner.x, corner.y);
-            if (cd < 60) {
-              ctx.beginPath();
-              ctx.moveTo(p.x, p.y);
-              ctx.lineTo(corner.x, corner.y);
-              ctx.strokeStyle = `rgba(59, 130, 246, ${(1 - cd / 60) * 0.15})`;
-              ctx.lineWidth = 0.5;
-              ctx.stroke();
-            }
-          });
-        });
-      });
+      // Update state
+      updatePanels(panels, mouse, W, H);
+      updateParticles(particles, mouse, W, H);
 
       animFrameId = requestAnimationFrame(animate);
     }
@@ -428,7 +610,6 @@ export default function JarvisBackground() {
 
     resize();
     animate();
-
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("resize", resize);
 
@@ -444,9 +625,10 @@ export default function JarvisBackground() {
       ref={canvasRef}
       style={{
         position: "fixed",
-        inset: 0,
-        width: "100%",
-        height: "100%",
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
         zIndex: -1,
         pointerEvents: "none",
         display: "block",
