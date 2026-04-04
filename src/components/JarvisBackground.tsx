@@ -10,70 +10,106 @@ function dist2(ax: number, ay: number, bx: number, by: number) {
   return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2);
 }
 
+// ─── Game constants ───────────────────────────────────────────────────────────
 
+const SNAKE_COLS  = 14;
+const SNAKE_ROWS  = 8;
+const BREAK_COLS  = 7;
+const BREAK_ROWS  = 4;
 
-// ─── Workflow topology (fixed layout, module-level) ───────────────────────────
+// ─── Shared types ─────────────────────────────────────────────────────────────
 
-const WF_NODES = [
-  { nx: -0.72, ny: -0.45, label: "TRIGGER" },
-  { nx: -0.14, ny: -0.45, label: "FILTER" },
-  { nx:  0.44, ny: -0.45, label: "TRANSFORM" },
-  { nx:  0.44, ny:  0.18, label: "API CALL" },
-  { nx: -0.14, ny:  0.52, label: "STORE" },
-];
-const WF_EDGES: [number, number][] = [[0, 1], [1, 2], [2, 3], [3, 4], [1, 4]];
+interface PulseRing { age: number; startR: number; maxR: number; }
+interface BreakParticle { x: number; y: number; vx: number; vy: number; life: number; }
 
-// ─── ECG waveform helpers ─────────────────────────────────────────────────────
-
-function ecgGaussian(x: number, mu: number, sigma: number): number {
-  return Math.exp(-0.5 * ((x - mu) / sigma) ** 2);
+// Galaga alien
+interface GalaAlien {
+  x: number; y: number;
+  type: number;           // 0=triangle, 1=diamond, 2=crab
+  phase: "enter" | "patrol" | "dive";
+  t: number;              // bezier progress (enter)
+  sx: number; sy: number; // bezier start
+  cpX: number; cpY: number; // bezier control point
+  homeX: number; homeY: number;
+  diveVX: number; diveVY: number;
 }
-function ecgSample(phase: number): number {
-  // PQRST waveform — one heartbeat cycle over phase 0→1
-  const p =  ecgGaussian(phase, 0.10, 0.025) * 0.15;
-  const q = -ecgGaussian(phase, 0.18, 0.008) * 0.08;
-  const r =  ecgGaussian(phase, 0.20, 0.012) * 1.0;
-  const s = -ecgGaussian(phase, 0.23, 0.009) * 0.25;
-  const t =  ecgGaussian(phase, 0.35, 0.040) * 0.30;
-  return p + q + r + s + t;
+
+interface Missile {
+  sx: number; sy: number;
+  tx: number; ty: number;
+  x: number; y: number;
+  progress: number; speed: number;
+}
+interface Interceptor {
+  lx: number; ly: number;
+  tx: number; ty: number;
+  x: number; y: number;
+  progress: number;
+  exploding: boolean;
+  explodeRadius: number;
+  maxExplodeRadius: number;
+  lingerTimer: number;   // frames to linger at max radius (90 = 1.5s)
 }
 
 // ─── Panel state ──────────────────────────────────────────────────────────────
 
-interface PulseRing { age: number; startR: number; maxR: number; }
-
 interface PanelState {
-  // geometry
   cx: number; cy: number; w: number; h: number;
-  // mouse
   isActive: boolean; wasActive: boolean;
-  activePct: number; // 0→1 smooth
+  activePct: number;
   pulseRings: PulseRing[];
-  // widget state (varies by panel index)
-  angle: number;        // generic rotation angle
-  angle2: number;       // secondary rotation
-  pulsePhase: number;   // generic sine phase
-  // shared progress bars
+  angle: number; angle2: number; pulsePhase: number;
   progFill: number; progFill2: number;
   skewY: number; scaleX: number;
-  // boot sequence & flicker
-  bootAge: number;      // seconds; starts negative (delay), counts to 0.6 = fully booted
-  flickerMult: number;  // 1 normally, briefly drops near 0 during rare idle flicker
-  flickerTimer: number; // countdown frames to next idle flicker
-  // panel 0 — radar sweep
-  radarAngle: number;
-  radarContacts: { a: number; d: number; lit: number }[];
-  // panel 1 — ECG vitals
-  ecgBuffer: number[];
-  ecgWriteIdx: number;
-  ecgPhase: number;
-  bpm: number;
-  o2: number;
-  // panel 2 — workflow nodes (packets; topology is module-level)
-  wfPackets: { edge: number; t: number; speed: number }[];
-  // panel 3 — gear + bars
-  bars: number[]; barTargets: number[];
-  // panel 4 — pong
+  bootAge: number;
+  flickerMult: number;
+  flickerTimer: number;
+
+  // Panel 0 — Galaga
+  galaAliens: GalaAlien[];
+  galaSpawnTimer: number;
+  galaPatrolOffX: number;
+  galaPatrolDir: number;
+  galaDiveTimer: number;
+  galaBullets: { x: number; y: number }[];
+  galaBombs: { x: number; y: number }[];
+  galaCannonX: number;
+  galaScore: number;
+  galaFireTimer: number;
+
+  // Panel 1 — Snake
+  snakeBody: { x: number; y: number }[];
+  snakeDir: { x: number; y: number };
+  snakeNextDir: { x: number; y: number };
+  snakeFood: { x: number; y: number };
+  snakeScore: number;
+  snakeMoveTimer: number;
+  snakeDead: boolean;
+  snakeDeadTimer: number;
+
+  // Panel 2 — Breakout
+  breakBricks: boolean[][];
+  breakBallX: number; breakBallY: number;
+  breakBallVX: number; breakBallVY: number;
+  breakPaddleX: number;
+  breakScore: number;
+  breakLives: number;
+  breakBallLaunched: boolean;
+  breakLaunchTimer: number;
+  breakResetTimer: number;
+  breakParticles: BreakParticle[];
+
+  // Panel 3 — Missile Command
+  mcMissiles: Missile[];
+  mcInterceptors: Interceptor[];
+  mcCities: boolean[];
+  mcScore: number;
+  mcWave: number;
+  mcSpawnTimer: number;
+  mcAutoFireTimer: number;
+  mcGameOverTimer: number;
+
+  // Panel 4 — Pong
   pongBallX: number; pongBallY: number;
   pongBallVX: number; pongBallVY: number;
   pongPaddleL: number; pongPaddleR: number;
@@ -81,7 +117,28 @@ interface PanelState {
   pongSpeed: number;
 }
 
+// ─── State factories ──────────────────────────────────────────────────────────
+
+function makeSnakeInit(): { body: { x: number; y: number }[]; food: { x: number; y: number } } {
+  const mx = Math.floor(SNAKE_COLS / 2), my = Math.floor(SNAKE_ROWS / 2);
+  const body = [{ x: mx, y: my }, { x: mx - 1, y: my }, { x: mx - 2, y: my }];
+  // Food spawns 1 cell inside the walls
+  let fx: number, fy: number;
+  do {
+    fx = 1 + Math.floor(Math.random() * (SNAKE_COLS - 2));
+    fy = 1 + Math.floor(Math.random() * (SNAKE_ROWS - 2));
+  } while (body.some(s => s.x === fx && s.y === fy));
+  return { body, food: { x: fx, y: fy } };
+}
+
+function makeBreakGrid(): boolean[][] {
+  return Array.from({ length: BREAK_ROWS }, () =>
+    Array.from({ length: BREAK_COLS }, () => true)
+  );
+}
+
 function makePanelState(cx: number, cy: number, w: number, h: number, skewY: number, scaleX: number): PanelState {
+  const snk = makeSnakeInit();
   return {
     cx, cy, w, h,
     isActive: false, wasActive: false, activePct: 0,
@@ -95,35 +152,87 @@ function makePanelState(cx: number, cy: number, w: number, h: number, skewY: num
     bootAge: 0,
     flickerMult: 1,
     flickerTimer: Math.floor(600 + Math.random() * 540),
-    // panel 0 — radar
-    radarAngle: Math.random() * Math.PI * 2,
-    radarContacts: Array.from({ length: 7 }, () => ({
-      a: Math.random() * Math.PI * 2,
-      d: 0.25 + Math.random() * 0.65,
-      lit: 0,
-    })),
-    // panel 1 — ECG
-    ecgBuffer: new Array(200).fill(0) as number[],
-    ecgWriteIdx: 0,
-    ecgPhase: Math.random(),
-    bpm: 62 + Math.floor(Math.random() * 14),
-    o2: 96 + Math.floor(Math.random() * 4),
-    // panel 2 — workflow
-    wfPackets: Array.from({ length: 6 }, () => ({
-      edge: Math.floor(Math.random() * 5),
-      t: Math.random(),
-      speed: 0.003 + Math.random() * 0.004,
-    })),
-    // panel 3 — gear + bars
-    bars: [0.72, 0.45, 0.88, 0.33, 0.61, 0.78, 0.50, 0.66],
-    barTargets: [0.72, 0.45, 0.88, 0.33, 0.61, 0.78, 0.50, 0.66],
-    // panel 4 — pong
+    // Galaga
+    galaAliens: [],
+    galaSpawnTimer: 20,
+    galaPatrolOffX: 0,
+    galaPatrolDir: 1,
+    galaDiveTimer: 200,
+    galaBullets: [], galaBombs: [],
+    galaCannonX: 0, galaScore: 0,
+    galaFireTimer: 55,
+    // Snake
+    snakeBody: snk.body,
+    snakeDir: { x: 1, y: 0 }, snakeNextDir: { x: 1, y: 0 },
+    snakeFood: snk.food,
+    snakeScore: 0, snakeMoveTimer: 18,
+    snakeDead: false, snakeDeadTimer: 0,
+    // Breakout
+    breakBricks: makeBreakGrid(),
+    breakBallX: 0, breakBallY: 0,
+    breakBallVX: 1.8 * (Math.random() > 0.5 ? 1 : -1), breakBallVY: -1.8,
+    breakPaddleX: 0,
+    breakScore: 0, breakLives: 3,
+    breakBallLaunched: false, breakLaunchTimer: 80, breakResetTimer: 0,
+    breakParticles: [],
+    // Missile Command
+    mcMissiles: [], mcInterceptors: [],
+    mcCities: [true, true, true],
+    mcScore: 0, mcWave: 1,
+    mcSpawnTimer: 150, mcAutoFireTimer: 100, mcGameOverTimer: 0,
+    // Pong
     pongBallX: 0, pongBallY: 0,
     pongBallVX: 1.3 * (Math.random() > 0.5 ? 1 : -1),
     pongBallVY: 0.8 * (Math.random() > 0.5 ? 1 : -1),
     pongPaddleL: 0, pongPaddleR: 0,
     pongScoreL: 0, pongScoreR: 0,
     pongSpeed: 1.0,
+  };
+}
+
+// ─── Galaga helpers ───────────────────────────────────────────────────────────
+
+// 10 formation slots: 2 rows × 5 cols
+function galaSlots(hw: number, hh: number): { x: number; y: number; type: number }[] {
+  const ct = -hh + 14;
+  const out: { x: number; y: number; type: number }[] = [];
+  for (let col = 0; col < 5; col++) {
+    const xPos = lerp(-hw * 0.70, hw * 0.70, col / 4);
+    out.push({ x: xPos, y: ct + 18, type: 0 });         // row 0: triangles
+    out.push({ x: xPos, y: ct + 34, type: 1 + col % 2 }); // row 1: diamond/crab alternating
+  }
+  return out;
+}
+
+// ─── Snake helpers ────────────────────────────────────────────────────────────
+
+function snakeAIDir(
+  body: { x: number; y: number }[],
+  dir: { x: number; y: number },
+  food: { x: number; y: number }
+): { x: number; y: number } {
+  const head = body[0];
+  const candidates = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+  const safe = candidates.filter(d => {
+    if (d.x === -dir.x && d.y === -dir.y) return false;
+    const nx = head.x + d.x, ny = head.y + d.y;
+    if (nx < 0 || nx >= SNAKE_COLS || ny < 0 || ny >= SNAKE_ROWS) return false;
+    return !body.slice(0, -1).some(s => s.x === nx && s.y === ny);
+  });
+  if (safe.length === 0) return dir;
+  safe.sort((a, b) => {
+    const da = (head.x + a.x - food.x) ** 2 + (head.y + a.y - food.y) ** 2;
+    const db = (head.x + b.x - food.x) ** 2 + (head.y + b.y - food.y) ** 2;
+    return da - db;
+  });
+  return safe[0];
+}
+
+// Returns cell width and height to fill the content area edge-to-edge
+function snakeCellDims(w: number, h: number): { cw: number; ch: number } {
+  return {
+    cw: (w - 8) / SNAKE_COLS,   // 4px margin each side
+    ch: (h - 36) / SNAKE_ROWS,  // title 14 + 2 pad top, 18+2 pad bottom
   };
 }
 
@@ -140,59 +249,37 @@ function makeParticle(W: number, H: number): Particle {
   };
 }
 
-// ─── Panel layout (proportional so it scales with canvas size) ────────────────
+// ─── Panel layout ─────────────────────────────────────────────────────────────
 
 function computePanelGeometry(W: number, H: number) {
-  // Positions derived from the reference image (2752x1536).
-  // Image aspect ratio ~1.79:1. With object-fit:cover these % map directly
-  // at standard 16:9 viewports and stay close at other ratios.
-  //
-  // Panel centers (% of image):
-  //   P1 Blueprint:  x≈12.5%  y≈36%
-  //   P2 Terminal:   x≈29%    y≈36%
-  // Symmetrical placement across the desk, following a gentle curve downwards at the edges
-  const xPcts  = [0.180, 0.340, 0.500, 0.660, 0.820];
-  const yPcts  = [0.460, 0.420, 0.400, 0.420, 0.460];
-
-  // Panel widths
-  const wPcts  = [0.150, 0.150, 0.150, 0.150, 0.150];
-  const wPx    = wPcts.map(f => clamp(f * W, 150, 310));
-  const hPx    = wPx.map(w => w * 0.70);
-  const skewYs = [-0.10, -0.04, 0, 0.04, 0.10];
+  const xPcts   = [0.180, 0.340, 0.500, 0.660, 0.820];
+  const yPcts   = [0.460, 0.420, 0.400, 0.420, 0.460];
+  const wPcts   = [0.150, 0.150, 0.150, 0.150, 0.150];
+  const wPx     = wPcts.map(f => clamp(f * W, 150, 310));
+  const hPx     = wPx.map(w => w * 0.70);
+  const skewYs  = [-0.10, -0.04, 0, 0.04, 0.10];
   const scaleXs = [0.86, 0.95, 1, 0.95, 0.86];
-
   return xPcts.map((xf, i) => ({
-    cx: xf * W,
-    cy: yPcts[i] * H,
-    w: wPx[i],
-    h: hPx[i],
-    skewY: skewYs[i],
-    scaleX: scaleXs[i],
+    cx: xf * W, cy: yPcts[i] * H,
+    w: wPx[i], h: hPx[i],
+    skewY: skewYs[i], scaleX: scaleXs[i],
   }));
 }
 
-// ─── Draw: amber glow overlay (animated shimmer over real desk LED in photo) ──
+// ─── Draw: amber glow overlay ─────────────────────────────────────────────────
 
 function drawAmberGlowOverlay(ctx: CanvasRenderingContext2D, W: number, H: number) {
-  // The real amber LED strip sits at ~57% down the image.
-  // We overlay an animated glow on top to make it feel alive.
   const stripY = H * 0.57;
-  const stripRX = W * 0.50;
-  const stripRY = H * 0.028;
   const cx = W / 2;
-
-  // Soft warm bloom beneath the strip
   const warmGrad = ctx.createRadialGradient(cx, stripY + 10, 0, cx, stripY + 10, W * 0.48);
   warmGrad.addColorStop(0, "rgba(255, 160, 40, 0.07)");
   warmGrad.addColorStop(0.5, "rgba(255, 140, 20, 0.03)");
   warmGrad.addColorStop(1, "rgba(255, 140, 20, 0)");
   ctx.fillStyle = warmGrad;
   ctx.fillRect(0, stripY - 20, W, H - stripY + 40);
-
-  // Animated glow arc removed based on user feedback.
 }
 
-// ─── Draw: panel glow on desk ─────────────────────────────────────────────────
+// ─── Draw: panel desk glow ────────────────────────────────────────────────────
 
 function drawPanelDeskGlow(ctx: CanvasRenderingContext2D, p: PanelState, H: number) {
   const bottom = p.cy + p.h / 2;
@@ -204,7 +291,6 @@ function drawPanelDeskGlow(ctx: CanvasRenderingContext2D, p: PanelState, H: numb
   ctx.fillStyle = grad;
   ctx.fillRect(p.cx - p.w * 0.65, bottom, p.w * 1.3, glowH);
 
-  // Panel outer bloom
   const bR = Math.max(p.w, p.h) * 0.85;
   const bloom = ctx.createRadialGradient(p.cx, p.cy, 0, p.cx, p.cy, bR);
   bloom.addColorStop(0, `rgba(6, 182, 212, ${lerp(0.04, 0.1, p.activePct)})`);
@@ -226,7 +312,6 @@ function drawPanelFrame(ctx: CanvasRenderingContext2D, p: PanelState) {
   const sc = 1 + 0.04 * activePct;
   ctx.scale(sc, sc);
 
-  // Holographic fill — very light cyan tint, nearly transparent
   const innerGlow = ctx.createLinearGradient(0, -hh, 0, hh);
   innerGlow.addColorStop(0,   "rgba(6, 182, 212, 0.07)");
   innerGlow.addColorStop(0.4, "rgba(6, 182, 212, 0.03)");
@@ -234,23 +319,18 @@ function drawPanelFrame(ctx: CanvasRenderingContext2D, p: PanelState) {
   ctx.fillStyle = innerGlow;
   ctx.fillRect(-hw, -hh, w, h);
 
-  // Scanlines — subtle horizontal bands across the panel interior
   ctx.save();
   ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
   ctx.fillStyle = "rgba(0, 0, 0, 0.045)";
-  for (let sy = -hh; sy < hh; sy += 3) {
-    ctx.fillRect(-hw, sy, w, 1);
-  }
+  for (let sy = -hh; sy < hh; sy += 3) { ctx.fillRect(-hw, sy, w, 1); }
   ctx.restore();
 
-  // Border with cyan glow
   ctx.shadowColor = "rgba(6, 182, 212, 0.85)";
   ctx.shadowBlur = lerp(8, 24, activePct);
   ctx.strokeStyle = `rgba(6, 182, 212, ${borderAlpha})`;
   ctx.lineWidth = 1;
   ctx.strokeRect(-hw, -hh, w, h);
 
-  // Corner accent L-marks (12px) — brighter than border, own glow
   const cL = 12;
   ctx.shadowColor = "rgba(6, 182, 212, 0.95)";
   ctx.shadowBlur = lerp(5, 14, activePct);
@@ -263,11 +343,10 @@ function drawPanelFrame(ctx: CanvasRenderingContext2D, p: PanelState) {
   ctx.moveTo(hw - cL, hh);   ctx.lineTo(hw, hh);   ctx.lineTo(hw, hh - cL);
   ctx.stroke();
   ctx.shadowBlur = 0;
-
   ctx.restore();
 }
 
-// ─── Draw: shared progress bars (bottom of panel) ────────────────────────────
+// ─── Draw: shared progress bars ───────────────────────────────────────────────
 
 function drawProgressBars(ctx: CanvasRenderingContext2D, p: PanelState, twoRows: boolean) {
   const { cx, cy, w, h, activePct, progFill, progFill2 } = p;
@@ -279,15 +358,13 @@ function drawProgressBars(ctx: CanvasRenderingContext2D, p: PanelState, twoRows:
   ctx.scale(sc, sc);
   const barW = w - 16;
   const alpha = lerp(0.55, 0.9, activePct);
-  const y1 = hh - 8;
-  const y2 = hh - 14;
-  // track
-  ctx.fillStyle = `rgba(59, 130, 246, 0.15)`;
+  const y1 = hh - 8, y2 = hh - 14;
+  ctx.fillStyle = "rgba(59, 130, 246, 0.15)";
   ctx.fillRect(-hw + 8, y2 - 2, barW, 2);
   ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
   ctx.fillRect(-hw + 8, y2 - 2, barW * progFill2, 2);
   if (twoRows) {
-    ctx.fillStyle = `rgba(59, 130, 246, 0.15)`;
+    ctx.fillStyle = "rgba(59, 130, 246, 0.15)";
     ctx.fillRect(-hw + 8, y1 - 2, barW, 2);
     ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.75})`;
     ctx.fillRect(-hw + 8, y1 - 2, barW * progFill, 2);
@@ -295,14 +372,14 @@ function drawProgressBars(ctx: CanvasRenderingContext2D, p: PanelState, twoRows:
   ctx.restore();
 }
 
-// ─── Panel 0: Sector Radar Sweep ─────────────────────────────────────────────
+// ─── Panel 0: Galaga ─────────────────────────────────────────────────────────
 
-function drawRadarPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const { cx, cy, w, h, activePct, radarAngle, radarContacts } = p;
+function drawGalagaPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
+  const { cx, cy, w, h, activePct } = p;
   const hw = w / 2, hh = h / 2;
   const sc = 1 + 0.04 * activePct;
   const alpha = lerp(0.7, 1.0, activePct);
-  const maxR = Math.min(hw, hh) * 0.82;
+  const cannonY = hh - 22;
 
   ctx.save();
   ctx.translate(cx, cy);
@@ -310,212 +387,256 @@ function drawRadarPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
   ctx.scale(sc, sc);
   ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
 
-  // Title
+  // Title + score
   ctx.font = "bold 7px monospace";
   ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.85})`;
-  ctx.fillText("SECTOR SCAN", -hw + 7, -hh + 10);
-
-  // Translate to center for polar drawing
-  ctx.save();
-  ctx.translate(0, 2);
-
-  // Range rings
-  for (let r = 1; r <= 4; r++) {
-    ctx.beginPath();
-    ctx.arc(0, 0, maxR * (r / 4), 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.18})`;
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
-  }
-
-  // Crosshair lines (N/S/E/W)
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.15})`;
-  ctx.lineWidth = 0.5;
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(Math.cos(a) * maxR, Math.sin(a) * maxR);
-    ctx.stroke();
-  }
-
-  // Sweep afterglow trail (8 steps behind the beam)
-  for (let step = 8; step >= 0; step--) {
-    const trailAngle = radarAngle - step * 0.08;
-    const trailAlpha = alpha * (1 - step / 9) * 0.18;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, maxR, trailAngle - 0.16, trailAngle, false);
-    ctx.closePath();
-    ctx.fillStyle = `rgba(6, 182, 212, ${trailAlpha})`;
-    ctx.fill();
-  }
-
-  // Main sweep beam (bright pie slice)
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.arc(0, 0, maxR, radarAngle - 0.16, radarAngle, false);
-  ctx.closePath();
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.28})`;
-  ctx.fill();
-  // Bright leading edge
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(Math.cos(radarAngle) * maxR, Math.sin(radarAngle) * maxR);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.7})`;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Contact blips
-  radarContacts.forEach((c) => {
-    if (c.lit <= 0.01) return;
-    const bx = Math.cos(c.a) * c.d * maxR;
-    const by = Math.sin(c.a) * c.d * maxR;
-    ctx.save();
-    ctx.shadowColor = "rgba(6, 182, 212, 0.9)";
-    ctx.shadowBlur = c.lit > 0.5 ? 8 : 3;
-    ctx.beginPath();
-    ctx.arc(bx, by, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * c.lit})`;
-    ctx.fill();
-    ctx.restore();
-  });
-
-  // Center dot
-  ctx.beginPath();
-  ctx.arc(0, 0, 2, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.7})`;
-  ctx.fill();
-
-  ctx.restore(); // polar translate
-
-  // Coords label bottom-right
-  ctx.font = "6px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.45})`;
+  ctx.fillText("GALAGA", -hw + 7, -hh + 10);
   ctx.textAlign = "right";
-  ctx.fillText("N 047° E", hw - 6, hh - 6);
+  ctx.fillText(`${p.galaScore}`, hw - 6, -hh + 10);
   ctx.textAlign = "left";
 
-  ctx.restore();
-}
-
-// ─── Panel 1: ECG Vitals Monitor ─────────────────────────────────────────────
-
-function drawEcgPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const { cx, cy, w, h, activePct, ecgBuffer, ecgWriteIdx, bpm, o2 } = p;
-  const hw = w / 2, hh = h / 2;
-  const sc = 1 + 0.04 * activePct;
-  const alpha = lerp(0.7, 1.0, activePct);
-
+  // Aliens
   ctx.save();
-  ctx.translate(cx, cy);
-  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
-  ctx.scale(sc, sc);
-  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
+  ctx.shadowColor = "rgba(6, 182, 212, 0.8)";
+  ctx.shadowBlur = 4;
+  p.galaAliens.forEach(a => {
+    const s = 5.5;
+    const fadeIn = a.phase === "enter" ? lerp(0.3, 1.0, a.t) : 1.0;
+    const aAlpha = alpha * fadeIn * 0.92;
 
-  // Title
-  ctx.font = "bold 7px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.85})`;
-  ctx.fillText("VITALS MONITOR", -hw + 7, -hh + 10);
-
-  const splitX = hw * 0.30;   // readout column occupies right 30%
-  const waveW = hw + splitX - 4;  // waveform area width
-  const waveLeft = -hw + 4;
-  const waveTop = -hh + 14;
-  const waveH = h - 24;
-
-  // Grid lines (4 horizontal dotted)
-  ctx.save();
-  ctx.setLineDash([2, 4]);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.1})`;
-  ctx.lineWidth = 0.5;
-  for (let g = 1; g <= 3; g++) {
-    const gy = waveTop + waveH * (g / 4);
-    ctx.beginPath();
-    ctx.moveTo(waveLeft, gy);
-    ctx.lineTo(waveLeft + waveW, gy);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-  ctx.restore();
-
-  // ECG waveform — ring buffer read from ecgWriteIdx backwards
-  const bufLen = ecgBuffer.length;
-  const waveAmpl = waveH * 0.38;
-  const midY = waveTop + waveH * 0.5;
-
-  // Draw glow pass (blurry, dim) then sharp pass
-  for (let pass = 0; pass < 2; pass++) {
     ctx.save();
-    if (pass === 0) {
-      ctx.shadowColor = "rgba(6, 182, 212, 0.7)";
-      ctx.shadowBlur = 6;
-      ctx.globalAlpha *= 0.5;
-    }
-    ctx.beginPath();
-    for (let i = 0; i < bufLen; i++) {
-      const bufIdx = ((ecgWriteIdx - bufLen + i) + bufLen * 2) % bufLen;
-      const x = waveLeft + (i / (bufLen - 1)) * waveW;
-      const y = midY - ecgBuffer[bufIdx] * waveAmpl;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * (pass === 0 ? 0.5 : 0.9)})`;
-    ctx.lineWidth = pass === 0 ? 2 : 1.2;
-    ctx.stroke();
-    ctx.restore();
-  }
+    ctx.translate(a.x, a.y);
+    ctx.strokeStyle = `rgba(6, 182, 212, ${aAlpha})`;
+    ctx.lineWidth = 1;
 
-  // Bright dot at latest sample (right edge)
-  const latestY = midY - (ecgBuffer[(ecgWriteIdx - 1 + bufLen) % bufLen]) * waveAmpl;
+    if (a.type === 0) {
+      ctx.beginPath();
+      ctx.moveTo(0, -s); ctx.lineTo(s, s * 0.6); ctx.lineTo(-s, s * 0.6); ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, s * 0.3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(6, 182, 212, ${aAlpha * 0.6})`; ctx.fill();
+    } else if (a.type === 1) {
+      ctx.beginPath();
+      ctx.moveTo(0, -s); ctx.lineTo(s, 0); ctx.lineTo(0, s); ctx.lineTo(-s, 0); ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.4, 0); ctx.lineTo(s * 0.4, 0);
+      ctx.moveTo(0, -s * 0.4); ctx.lineTo(0, s * 0.4);
+      ctx.strokeStyle = `rgba(6, 182, 212, ${aAlpha * 0.5})`; ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(-s, 0); ctx.lineTo(-s * 0.5, -s); ctx.lineTo(s * 0.5, -s);
+      ctx.lineTo(s, 0); ctx.lineTo(s * 0.5, s); ctx.lineTo(-s * 0.5, s); ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.5, -s); ctx.lineTo(-s * 0.8, -s * 1.5);
+      ctx.moveTo(s * 0.5, -s);  ctx.lineTo(s * 0.8, -s * 1.5);
+      ctx.strokeStyle = `rgba(6, 182, 212, ${aAlpha * 0.4})`; ctx.stroke();
+    }
+    ctx.restore();
+  });
+  ctx.restore();
+
+  // Player bullets
   ctx.save();
   ctx.shadowColor = "rgba(6, 182, 212, 1)";
-  ctx.shadowBlur = 12;
-  ctx.beginPath();
-  ctx.arc(waveLeft + waveW, latestY, 2.5, 0, Math.PI * 2);
+  ctx.shadowBlur = 8;
   ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
+  p.galaBullets.forEach(b => { ctx.fillRect(b.x - 1, b.y - 5, 2, 9); });
+  ctx.restore();
+
+  // Alien bombs
+  ctx.fillStyle = `rgba(255, 120, 80, ${alpha * 0.9})`;
+  p.galaBombs.forEach(b => { ctx.fillRect(b.x - 1.5, b.y - 4, 3, 7); });
+
+  // Cannon
+  ctx.save();
+  ctx.shadowColor = "rgba(6, 182, 212, 0.9)";
+  ctx.shadowBlur = activePct > 0.3 ? 12 : 5;
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
+  const ccx = p.galaCannonX;
+  ctx.fillRect(ccx - 9, cannonY + 2, 18, 4);
+  ctx.fillRect(ccx - 2.5, cannonY - 8, 5, 12);
+  ctx.restore();
+
+  if (activePct > 0.5) {
+    ctx.font = "5px monospace";
+    ctx.fillStyle = `rgba(6, 182, 212, ${(activePct - 0.5) * 2 * alpha * 0.55})`;
+    ctx.textAlign = "center";
+    ctx.fillText("MOVE MOUSE TO AIM", 0, hh - 6);
+    ctx.textAlign = "left";
+  }
+
+  ctx.restore();
+}
+
+// ─── Panel 1: Snake ───────────────────────────────────────────────────────────
+
+function drawSnakePanel(ctx: CanvasRenderingContext2D, p: PanelState) {
+  const { cx, cy, w, h, activePct } = p;
+  const hw = w / 2, hh = h / 2;
+  const sc = 1 + 0.04 * activePct;
+  const alpha = lerp(0.7, 1.0, activePct);
+  const { cw, ch } = snakeCellDims(w, h);
+  const gridX = -hw + 4;
+  const gridY = -hh + 16;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
+  ctx.scale(sc, sc);
+  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
+
+  // Title + score
+  ctx.font = "bold 7px monospace";
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.85})`;
+  ctx.fillText("SNAKE", -hw + 7, -hh + 10);
+  ctx.textAlign = "right";
+  ctx.fillText(`${p.snakeScore}`, hw - 6, -hh + 10);
+  ctx.textAlign = "left";
+
+  // Grid dots (faint)
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.07})`;
+  for (let row = 0; row < SNAKE_ROWS; row++) {
+    for (let col = 0; col < SNAKE_COLS; col++) {
+      ctx.fillRect(gridX + col * cw + cw / 2 - 0.5, gridY + row * ch + ch / 2 - 0.5, 1, 1);
+    }
+  }
+
+  // Snake body
+  p.snakeBody.forEach((seg, idx) => {
+    const bx = gridX + seg.x * cw + 1;
+    const by = gridY + seg.y * ch + 1;
+    const segAlpha = alpha * (idx === 0 ? 1.0 : lerp(0.85, 0.35, idx / p.snakeBody.length));
+    ctx.save();
+    if (idx === 0) { ctx.shadowColor = "rgba(6, 182, 212, 0.9)"; ctx.shadowBlur = 8; }
+    ctx.fillStyle = `rgba(6, 182, 212, ${segAlpha})`;
+    ctx.fillRect(bx, by, cw - 2, ch - 2);
+    ctx.restore();
+  });
+
+  // Food — pulsing circle
+  const pulse = 0.6 + 0.4 * Math.sin(p.pulsePhase);
+  const fx = gridX + p.snakeFood.x * cw + cw / 2;
+  const fy = gridY + p.snakeFood.y * ch + ch / 2;
+  ctx.save();
+  ctx.shadowColor = "rgba(6, 182, 212, 1)";
+  ctx.shadowBlur = 10 * pulse;
+  ctx.beginPath();
+  ctx.arc(fx, fy, Math.min(cw, ch) * 0.28 * pulse, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * pulse})`;
   ctx.fill();
   ctx.restore();
 
-  // Divider
-  ctx.beginPath();
-  ctx.moveTo(splitX + 2, -hh + 6);
-  ctx.lineTo(splitX + 2, hh - 6);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.2})`;
-  ctx.lineWidth = 0.5;
-  ctx.stroke();
-
-  // Readout column
-  const readX = splitX + 8;
-  const entries = [
-    { value: String(bpm), label: "BPM", big: true },
-    { value: `${o2}%`, label: "O\u2082 SAT", big: false },
-    { value: "98.2°", label: "TEMP F", big: false },
-  ];
-  let ry = -hh + 22;
-  entries.forEach(({ value, label, big }) => {
-    ctx.font = `bold ${big ? 13 : 10}px monospace`;
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
+  // Death flash
+  if (p.snakeDead && p.snakeDeadTimer > 90) {
+    ctx.fillStyle = `rgba(255, 80, 80, ${((p.snakeDeadTimer - 90) / 30) * 0.25})`;
+    ctx.fillRect(-hw, -hh, w, h);
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = `rgba(255, 100, 80, ${alpha * 0.9})`;
+    ctx.textAlign = "center";
+    ctx.fillText("GAME OVER", 0, 0);
     ctx.textAlign = "left";
-    ctx.fillText(value, readX, ry);
-    ry += big ? 11 : 9;
+  }
+
+  if (activePct > 0.5 && !p.snakeDead) {
     ctx.font = "5px monospace";
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.55})`;
-    ctx.fillText(label, readX, ry);
-    ry += big ? 16 : 14;
-  });
+    ctx.fillStyle = `rgba(6, 182, 212, ${(activePct - 0.5) * 2 * alpha * 0.5})`;
+    ctx.textAlign = "center";
+    ctx.fillText("MOUSE TO STEER", 0, hh - 6);
+    ctx.textAlign = "left";
+  }
+
+  ctx.restore();
+}
+
+// ─── Panel 2: Breakout ────────────────────────────────────────────────────────
+
+function drawBreakoutPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
+  const { cx, cy, w, h, activePct } = p;
+  const hw = w / 2, hh = h / 2;
+  const sc = 1 + 0.04 * activePct;
+  const alpha = lerp(0.7, 1.0, activePct);
+  const contentTop = -hh + 14;
+  const contentBottom = hh - 18;
+  const brickW = (w - 14) / BREAK_COLS;
+  const brickH = 6;
+  const brickGap = 2;
+  const paddleW = w * 0.27;
+  const paddleH = 4;
+  const paddleY = contentBottom - 6;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
+  ctx.scale(sc, sc);
+  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
+
+  ctx.font = "bold 7px monospace";
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.85})`;
+  ctx.fillText("BREAKOUT", -hw + 7, -hh + 10);
+  ctx.textAlign = "right";
+  ctx.fillText(`${p.breakScore}  ${"■".repeat(p.breakLives)}`, hw - 6, -hh + 10);
   ctx.textAlign = "left";
 
+  const brickAreaTop = contentTop + 4;
+  for (let row = 0; row < BREAK_ROWS; row++) {
+    for (let col = 0; col < BREAK_COLS; col++) {
+      if (!p.breakBricks[row]?.[col]) continue;
+      const bx = -hw + 7 + col * (brickW + brickGap / BREAK_COLS);
+      const by = brickAreaTop + row * (brickH + 3);
+      const rowBrightness = 1 - row * 0.18;
+      ctx.save();
+      ctx.shadowColor = "rgba(6, 182, 212, 0.6)";
+      ctx.shadowBlur = 3 + row;
+      ctx.fillStyle = `rgba(6, 182, 212, ${alpha * rowBrightness * 0.45})`;
+      ctx.fillRect(bx, by, brickW - 1, brickH);
+      ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * rowBrightness * 0.85})`;
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(bx, by, brickW - 1, brickH);
+      ctx.restore();
+    }
+  }
+
+  p.breakParticles.forEach(pt => {
+    ctx.fillStyle = `rgba(6, 182, 212, ${pt.life})`;
+    ctx.fillRect(pt.x - 1, pt.y - 1, 2, 2);
+  });
+
+  ctx.save();
+  ctx.shadowColor = "rgba(6, 182, 212, 1)";
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.arc(p.breakBallX, p.breakBallY, 3, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`; ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  if (activePct > 0.2) { ctx.shadowColor = "rgba(6, 182, 212, 0.9)"; ctx.shadowBlur = lerp(0, 10, activePct); }
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
+  ctx.fillRect(p.breakPaddleX - paddleW / 2, paddleY, paddleW, paddleH);
+  ctx.restore();
+
+  if (activePct > 0.5) {
+    ctx.font = "5px monospace";
+    ctx.fillStyle = `rgba(6, 182, 212, ${(activePct - 0.5) * 2 * alpha * 0.55})`;
+    ctx.textAlign = "center";
+    ctx.fillText("MOUSE TO MOVE PADDLE", 0, hh - 6);
+    ctx.textAlign = "left";
+  }
+
   ctx.restore();
 }
 
-// ─── Panel 2: Workflow / Automation Nodes ────────────────────────────────────
+// ─── Panel 3: Missile Command ─────────────────────────────────────────────────
 
-function drawWorkflowPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const { cx, cy, w, h, activePct, wfPackets } = p;
+function drawMissileCommandPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
+  const { cx, cy, w, h, activePct } = p;
   const hw = w / 2, hh = h / 2;
   const sc = 1 + 0.04 * activePct;
   const alpha = lerp(0.7, 1.0, activePct);
+  const cityY = hh - 22;
+  const cityXs = [-hw * 0.50, 0, hw * 0.50];
 
   ctx.save();
   ctx.translate(cx, cy);
@@ -523,212 +644,105 @@ function drawWorkflowPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
   ctx.scale(sc, sc);
   ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
 
-  // Title
   ctx.font = "bold 7px monospace";
   ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.85})`;
-  ctx.fillText("AUTOMATION", -hw + 7, -hh + 10);
+  ctx.fillText("MISSILE CMD", -hw + 7, -hh + 10);
+  ctx.textAlign = "right";
+  ctx.fillText(`W${p.mcWave} ${p.mcScore}`, hw - 6, -hh + 10);
+  ctx.textAlign = "left";
 
-  // Resolve node pixel positions
-  const nodeW = 34, nodeH = 12;
-  const nodes = WF_NODES.map(n => ({
-    x: n.nx * hw,
-    y: n.ny * hh,
-    label: n.label,
-  }));
-
-  // Draw edges
-  WF_EDGES.forEach(([a, b]) => {
-    const na = nodes[a], nb = nodes[b];
-    ctx.beginPath();
-    ctx.moveTo(na.x, na.y);
-    ctx.lineTo(nb.x, nb.y);
-    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.22})`;
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-
-    // Arrowhead at destination
-    const dx = nb.x - na.x, dy = nb.y - na.y;
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    const ax = nb.x - ux * (nodeW / 2 + 3);
-    const ay = nb.y - uy * (nodeH / 2 + 3);
-    const px = -uy, py = ux;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(ax - ux * 5 + px * 3, ay - uy * 5 + py * 3);
-    ctx.lineTo(ax - ux * 5 - px * 3, ay - uy * 5 - py * 3);
-    ctx.closePath();
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.35})`;
-    ctx.fill();
-  });
-
-  // Draw data packets
-  ctx.save();
-  ctx.shadowColor = "rgba(6, 182, 212, 0.9)";
-  ctx.shadowBlur = 8;
-  wfPackets.forEach(pk => {
-    const [a, b] = WF_EDGES[pk.edge] ?? [0, 1];
-    const na = nodes[a], nb = nodes[b];
-    const pkx = lerp(na.x, nb.x, pk.t);
-    const pky = lerp(na.y, nb.y, pk.t);
-    ctx.beginPath();
-    ctx.arc(pkx, pky, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.95})`;
-    ctx.fill();
-  });
-  ctx.restore();
-
-  // Draw nodes on top
-  nodes.forEach(n => {
-    const nx = n.x - nodeW / 2, ny = n.y - nodeH / 2;
-    // Rounded rect fill
-    const r = 2;
-    ctx.beginPath();
-    ctx.moveTo(nx + r, ny);
-    ctx.lineTo(nx + nodeW - r, ny);
-    ctx.arcTo(nx + nodeW, ny, nx + nodeW, ny + r, r);
-    ctx.lineTo(nx + nodeW, ny + nodeH - r);
-    ctx.arcTo(nx + nodeW, ny + nodeH, nx + nodeW - r, ny + nodeH, r);
-    ctx.lineTo(nx + r, ny + nodeH);
-    ctx.arcTo(nx, ny + nodeH, nx, ny + nodeH - r, r);
-    ctx.lineTo(nx, ny + r);
-    ctx.arcTo(nx, ny, nx + r, ny, r);
-    ctx.closePath();
-    ctx.fillStyle = "rgba(4, 12, 35, 0.85)";
-    ctx.fill();
-    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.7})`;
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-    // Label
-    ctx.font = "5px monospace";
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.9})`;
-    ctx.textAlign = "center";
-    ctx.fillText(n.label, n.x, n.y + 2);
-    ctx.textAlign = "left";
-  });
-
-  ctx.restore();
-}
-
-// ─── Panel 3: Gear + Bars ─────────────────────────────────────────────────────
-
-function drawGearBarsPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const { cx, cy, w, h, angle, angle2, activePct, bars } = p;
-  const hw = w / 2, hh = h / 2;
-  const sc = 1 + 0.04 * activePct;
-  const alpha = lerp(0.7, 1.0, activePct);
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.transform(p.scaleX, p.skewY, 0, 1, 0, 0);
-  ctx.scale(sc, sc);
-  ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
-
-  // Title
-  ctx.font = "bold 7px monospace";
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.85})`;
-  ctx.fillText("MK.3 STABILIZER", -hw + 7, -hh + 10);
-
-  // ── Gear (top half) ──
-  const gCX = -hw * 0.18;
-  const gCY = -hh * 0.22;
-  const outerR = Math.min(hw, hh) * 0.46;
-  const innerR = outerR * 0.60;
-  const coreR  = outerR * 0.28;
-
-  // Outer ring
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.3})`;
+  ctx.lineWidth = 0.7;
   ctx.beginPath();
-  ctx.arc(gCX, gCY, outerR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.55})`;
-  ctx.lineWidth = 1;
+  ctx.moveTo(-hw + 4, cityY + 10); ctx.lineTo(hw - 4, cityY + 10);
   ctx.stroke();
 
-  // Gear teeth (24)
-  ctx.save();
-  ctx.translate(gCX, gCY);
-  ctx.rotate(angle);
-  const teeth = 24;
-  for (let ti = 0; ti < teeth; ti++) {
-    const a = (ti / teeth) * Math.PI * 2;
-    const tH = outerR * 0.12;
+  cityXs.forEach((ccx, i) => {
+    if (!p.mcCities[i]) {
+      ctx.fillStyle = `rgba(255, 100, 50, ${alpha * 0.4})`;
+      ctx.fillRect(ccx - 6, cityY + 4, 12, 4);
+      return;
+    }
     ctx.save();
-    ctx.rotate(a);
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.5})`;
-    ctx.fillRect(-2, -(outerR + tH), 4, tH);
-    ctx.restore();
-  }
-  // Inner ring
-  ctx.beginPath();
-  ctx.arc(0, 0, innerR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.4})`;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  // Spokes
-  for (let si = 0; si < 6; si++) {
-    const a = (si / 6) * Math.PI * 2;
+    ctx.shadowColor = "rgba(6, 182, 212, 0.7)"; ctx.shadowBlur = 5;
+    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.85})`; ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * coreR, Math.sin(a) * coreR);
-    ctx.lineTo(Math.cos(a) * innerR, Math.sin(a) * innerR);
-    ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.38})`;
-    ctx.lineWidth = 1;
+    ctx.moveTo(ccx - 8, cityY + 10); ctx.lineTo(ccx - 8, cityY + 2);
+    ctx.lineTo(ccx - 5, cityY + 2); ctx.lineTo(ccx - 5, cityY - 2);
+    ctx.lineTo(ccx - 2, cityY - 2); ctx.lineTo(ccx - 2, cityY - 6);
+    ctx.lineTo(ccx + 2, cityY - 6); ctx.lineTo(ccx + 2, cityY - 2);
+    ctx.lineTo(ccx + 5, cityY - 2); ctx.lineTo(ccx + 5, cityY + 2);
+    ctx.lineTo(ccx + 8, cityY + 2); ctx.lineTo(ccx + 8, cityY + 10);
     ctx.stroke();
-  }
-  // Core circle
-  ctx.beginPath();
-  ctx.arc(0, 0, coreR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.65})`;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.restore();
-
-  // Small gear (bottom-left of big gear)
-  const sgX = gCX - outerR * 0.72;
-  const sgY = gCY + outerR * 0.60;
-  const sgR = outerR * 0.28;
-  ctx.save();
-  ctx.translate(sgX, sgY);
-  ctx.rotate(angle2);
-  ctx.beginPath();
-  ctx.arc(0, 0, sgR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.45})`;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  const sgTeeth = 12;
-  for (let ti = 0; ti < sgTeeth; ti++) {
-    const a = (ti / sgTeeth) * Math.PI * 2;
-    const tH = sgR * 0.22;
-    ctx.save();
-    ctx.rotate(a);
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.42})`;
-    ctx.fillRect(-1.2, -(sgR + tH), 2.4, tH);
     ctx.restore();
-  }
-  ctx.restore();
-
-  // ── Bar chart (right side + bottom) ──
-  const barLabels = ["CPU", "NET", "GPU", "I/O", "SYS", "PWR"];
-  const chartX = gCX + outerR + 10;
-  const chartTop = -hh + 14;
-  const chartH = hh * 0.95;
-  const chartW = hw - chartX - 4;
-  const barCount = barLabels.length;
-  const barW = chartW / barCount - 2;
-
-  barLabels.forEach((label, bi) => {
-    const val = bars[bi] ?? 0.5;
-    const bx = chartX + bi * (barW + 2);
-    const bH = chartH * val;
-    const by = chartTop + chartH - bH;
-    ctx.fillStyle = `rgba(59, 130, 246, 0.12)`;
-    ctx.fillRect(bx, chartTop, barW, chartH);
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.75})`;
-    ctx.fillRect(bx, by, barW, bH);
-    ctx.font = "5px monospace";
-    ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.5})`;
-    ctx.textAlign = "center";
-    ctx.fillText(label, bx + barW / 2, chartTop + chartH + 7);
-    ctx.textAlign = "left";
   });
+
+  // Missiles
+  p.mcMissiles.forEach(m => {
+    const trailLen = 0.15;
+    const t0 = Math.max(0, m.progress - trailLen);
+    const grad = ctx.createLinearGradient(
+      lerp(m.sx, m.tx, t0), lerp(m.sy, m.ty, t0), m.x, m.y
+    );
+    grad.addColorStop(0, "rgba(255, 80, 60, 0)");
+    grad.addColorStop(1, `rgba(255, 80, 60, ${alpha * 0.85})`);
+    ctx.save();
+    ctx.shadowColor = "rgba(255, 80, 60, 0.7)"; ctx.shadowBlur = 4;
+    ctx.strokeStyle = grad; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(lerp(m.sx, m.tx, t0), lerp(m.sy, m.ty, t0));
+    ctx.lineTo(m.x, m.y); ctx.stroke();
+    ctx.beginPath(); ctx.arc(m.x, m.y, 2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 120, 80, ${alpha})`; ctx.fill();
+    ctx.restore();
+  });
+
+  // Interceptors & explosions
+  p.mcInterceptors.forEach(ic => {
+    if (!ic.exploding) {
+      ctx.save();
+      ctx.shadowColor = "rgba(6, 182, 212, 1)"; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(ic.x, ic.y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`; ctx.fill();
+      ctx.restore();
+    } else {
+      // During linger: full opacity; fading out after linger expires
+      const lingerTotal = 90;
+      const fadeAlpha = ic.lingerTimer > 0
+        ? alpha                                           // linger — full
+        : alpha * (ic.explodeRadius / ic.maxExplodeRadius); // expanding — fade as it shrinks is N/A
+      // When lingerTimer counts down to 0 we fade based on remaining fraction
+      const renderAlpha = ic.lingerTimer > 0
+        ? alpha * lerp(0.5, 1.0, ic.lingerTimer / lingerTotal)
+        : fadeAlpha;
+
+      ctx.save();
+      ctx.shadowColor = "rgba(6, 182, 212, 0.9)";
+      ctx.shadowBlur = ic.lingerTimer > 0 ? 14 : 6;
+      ctx.globalAlpha = renderAlpha;
+      ctx.strokeStyle = "rgba(6, 182, 212, 1)";
+      ctx.lineWidth = ic.lingerTimer > 0 ? 1.8 : 1.2;
+      ctx.beginPath(); ctx.arc(ic.x, ic.y, ic.explodeRadius, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = renderAlpha * (ic.lingerTimer > 0 ? 0.12 : 0.06);
+      ctx.fillStyle = "rgba(6, 182, 212, 1)";
+      ctx.beginPath(); ctx.arc(ic.x, ic.y, ic.explodeRadius, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  });
+
+  if (p.mcGameOverTimer > 0) {
+    ctx.fillStyle = `rgba(255, 60, 40, ${Math.min(1, (180 - p.mcGameOverTimer) / 60) * 0.2})`;
+    ctx.fillRect(-hw, -hh, w, h);
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = `rgba(255, 100, 60, ${alpha * 0.9})`;
+    ctx.textAlign = "center"; ctx.fillText("CITY LOST", 0, 0); ctx.textAlign = "left";
+  }
+
+  if (activePct > 0.5) {
+    ctx.font = "5px monospace";
+    ctx.fillStyle = `rgba(6, 182, 212, ${(activePct - 0.5) * 2 * alpha * 0.55})`;
+    ctx.textAlign = "center"; ctx.fillText("CLICK TO INTERCEPT", 0, hh - 6); ctx.textAlign = "left";
+  }
 
   ctx.restore();
 }
@@ -736,13 +750,8 @@ function drawGearBarsPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
 // ─── Panel 4: Pong ───────────────────────────────────────────────────────────
 
 function drawPongPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
-  const {
-    cx, cy, w, h, activePct,
-    pongBallX, pongBallY, pongPaddleL, pongPaddleR,
-    pongScoreL, pongScoreR,
-  } = p;
+  const { cx, cy, w, h, activePct, pongBallX, pongBallY, pongPaddleL, pongPaddleR, pongScoreL, pongScoreR } = p;
   const hw = w / 2, hh = h / 2;
-  // Scale up more than other panels so there's more target area for the paddle
   const sc = 1 + 0.16 * activePct;
   const alpha = lerp(0.7, 1.0, activePct);
   const paddleH = 22, paddleW = 3;
@@ -755,7 +764,6 @@ function drawPongPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
   ctx.scale(sc, sc);
   ctx.beginPath(); ctx.rect(-hw, -hh, w, h); ctx.clip();
 
-  // Title + score
   ctx.font = "bold 7px monospace";
   ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.75})`;
   ctx.fillText("PONG", -hw + 7, -hh + 10);
@@ -763,59 +771,38 @@ function drawPongPanel(ctx: CanvasRenderingContext2D, p: PanelState) {
   ctx.fillText(`${pongScoreL}  ${pongScoreR}`, 0, -hh + 10);
   ctx.textAlign = "left";
 
-  // Center dashed divider
   ctx.save();
   ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.18})`;
-  ctx.lineWidth = 0.7;
-  ctx.beginPath();
-  ctx.moveTo(0, -wallB);
-  ctx.lineTo(0, wallB);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.18})`; ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.moveTo(0, -wallB); ctx.lineTo(0, wallB); ctx.stroke();
+  ctx.setLineDash([]); ctx.restore();
 
-  // Top / bottom walls
-  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.3})`;
-  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = `rgba(6, 182, 212, ${alpha * 0.3})`; ctx.lineWidth = 0.7;
   ctx.beginPath();
   ctx.moveTo(-hw + 4, -wallB); ctx.lineTo(hw - 4, -wallB);
   ctx.moveTo(-hw + 4,  wallB); ctx.lineTo(hw - 4,  wallB);
   ctx.stroke();
 
-  // Left paddle
   ctx.save();
-  if (activePct > 0.1) {
-    ctx.shadowColor = "rgba(6, 182, 212, 0.9)";
-    ctx.shadowBlur = lerp(0, 8, activePct);
-  }
+  if (activePct > 0.1) { ctx.shadowColor = "rgba(6, 182, 212, 0.9)"; ctx.shadowBlur = lerp(0, 8, activePct); }
   ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
   ctx.fillRect(-paddleX - paddleW / 2, pongPaddleL - paddleH / 2, paddleW, paddleH);
   ctx.restore();
 
-  // Right paddle
   ctx.fillStyle = `rgba(6, 182, 212, ${alpha * 0.75})`;
   ctx.fillRect(paddleX - paddleW / 2, pongPaddleR - paddleH / 2, paddleW, paddleH);
 
-  // Ball
   ctx.save();
-  ctx.shadowColor = "rgba(6, 182, 212, 1)";
-  ctx.shadowBlur = 8;
-  ctx.beginPath();
-  ctx.arc(pongBallX, pongBallY, 2.5, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
-  ctx.fill();
+  ctx.shadowColor = "rgba(6, 182, 212, 1)"; ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.arc(pongBallX, pongBallY, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`; ctx.fill();
   ctx.restore();
 
-  // Mouse hint when active
   if (activePct > 0.5) {
     ctx.font = "5px monospace";
     ctx.fillStyle = `rgba(6, 182, 212, ${(activePct - 0.5) * 2 * alpha * 0.6})`;
-    ctx.textAlign = "center";
-    ctx.fillText("← YOUR PADDLE", -hw * 0.45, -hh + 10);
-    ctx.textAlign = "left";
+    ctx.textAlign = "center"; ctx.fillText("← YOUR PADDLE", -hw * 0.45, -hh + 10); ctx.textAlign = "left";
   }
-
   ctx.restore();
 }
 
@@ -828,11 +815,8 @@ function drawPulseRings(ctx: CanvasRenderingContext2D, panels: PanelState[]) {
       if (progress >= 1) return;
       const r = lerp(ring.startR, ring.maxR, progress);
       const op = 0.4 * (1 - progress);
-      ctx.beginPath();
-      ctx.arc(p.cx, p.cy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(6, 182, 212, ${op})`;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.beginPath(); ctx.arc(p.cx, p.cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(6, 182, 212, ${op})`; ctx.lineWidth = 1.5; ctx.stroke();
     });
   });
 }
@@ -849,19 +833,18 @@ export default function JarvisBackground() {
     if (!ctx) return;
 
     let raf: number;
-    const mouse = { x: -9999, y: -9999 };
+    const mouse = { x: -9999, y: -9999, clicked: false };
 
-    // Animation state shared by all panels
     const state = {
       panels: [] as PanelState[],
       particles: [] as Particle[],
     };
 
     const DRAW_FNS = [
-      drawRadarPanel,
-      drawEcgPanel,
-      drawWorkflowPanel,
-      drawGearBarsPanel,
+      drawGalagaPanel,
+      drawSnakePanel,
+      drawBreakoutPanel,
+      drawMissileCommandPanel,
       drawPongPanel,
     ];
 
@@ -873,7 +856,6 @@ export default function JarvisBackground() {
       const geom = computePanelGeometry(W, H);
       state.panels = geom.map(({ cx, cy, w, h, skewY, scaleX }, i) => {
         const p = makePanelState(cx, cy, w, h, skewY, scaleX);
-        // Stagger boot: panel 0 starts immediately, each subsequent panel 0.22s later
         p.bootAge = -(i * 0.22);
         return p;
       });
@@ -883,14 +865,13 @@ export default function JarvisBackground() {
         () => makeParticle(W, H)
       );
 
-      // Initial solid fill
       ctx.fillStyle = "#03060f";
       ctx.fillRect(0, 0, W, H);
     }
 
     function update() {
       if (!canvas) return;
-      const W = canvas.width, H = canvas.height;
+      const W = canvas.width;
       const DT = 1 / 60;
 
       state.panels.forEach((p, i) => {
@@ -900,89 +881,466 @@ export default function JarvisBackground() {
         const tgt = p.isActive ? 1 : 0;
         p.activePct = lerp(p.activePct, tgt, p.isActive ? 0.06 : 0.04);
 
-        const spd = 1 + p.activePct * 1.5; // 1× idle → 2.5× active
+        const spd = 1 + p.activePct * 1.5;
 
-        // Boot sequence — advance age every frame
         p.bootAge += DT;
 
-        // Idle flicker — rare, brief opacity drop
         p.flickerTimer -= 1;
         if (p.flickerTimer <= 0) {
           p.flickerMult = 0.08 + Math.random() * 0.15;
-          p.flickerTimer = Math.floor(480 + Math.random() * 540); // 8–17s @ 60fps
+          p.flickerTimer = Math.floor(480 + Math.random() * 540);
         }
-        // Recover flicker quickly (3–4 frames)
-        if (p.flickerMult < 1) {
-          p.flickerMult = Math.min(1, p.flickerMult + 0.35);
-        }
+        if (p.flickerMult < 1) p.flickerMult = Math.min(1, p.flickerMult + 0.35);
 
-        // Angles / phase (used by radar, ECG, geo)
         p.angle += 0.006 * spd;
         p.pulsePhase += 0.025 * spd;
 
-        // Progress bars (used by drawProgressBars)
         p.progFill += 0.0018 * spd;
         if (p.progFill > 0.95) p.progFill = 0;
         p.progFill2 += 0.0024 * spd;
         if (p.progFill2 > 0.9) p.progFill2 = 0;
 
-        // Panel 0 — radar sweep + contacts
+        // ── Panel 0: Galaga ─────────────────────────────────────────────────
         if (i === 0) {
-          const sweepSpd = lerp(0.015, 0.035, p.activePct);
-          p.radarAngle = (p.radarAngle + sweepSpd) % (Math.PI * 2);
-          p.radarContacts.forEach(c => {
-            const diff = Math.abs(((p.radarAngle - c.a + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-            if (diff < 0.15) c.lit = 1.0;
-            else c.lit = Math.max(0, c.lit - 0.005);
+          const hw = p.w / 2, hh = p.h / 2;
+          const contentTop = -hh + 14;
+          const contentH = (hh - 18) - contentTop;
+          const cannonY = hh - 22;
+          const bulletSpeed = 3.5;
+          const slots = galaSlots(hw, hh);
+
+          // Patrol oscillation — all patrol aliens sway together
+          p.galaPatrolOffX += p.galaPatrolDir * 0.28;
+          if (Math.abs(p.galaPatrolOffX) > hw * 0.18) p.galaPatrolDir *= -1;
+
+          // Spawn new alien (up to 10 alive at once)
+          p.galaSpawnTimer--;
+          if (p.galaSpawnTimer <= 0 && p.galaAliens.length < 10) {
+            const occupied = new Set(
+              p.galaAliens.filter(a => a.phase !== "enter").map(a => `${a.homeX.toFixed(0)},${a.homeY.toFixed(0)}`)
+            );
+            const free = slots.filter(s => !occupied.has(`${s.x.toFixed(0)},${s.y.toFixed(0)}`));
+            if (free.length > 0) {
+              const slot = free[Math.floor(Math.random() * free.length)];
+              // Spawn from left or right of top, sweep in with bezier arc
+              const fromLeft = Math.random() > 0.5;
+              const sx = fromLeft ? -hw - 12 : hw + 12;
+              const sy = contentTop + 8;
+              const cpX = fromLeft ? hw * 0.5 : -hw * 0.5;
+              const cpY = contentTop + contentH * 0.22;
+              p.galaAliens.push({
+                x: sx, y: sy,
+                type: slot.type,
+                phase: "enter",
+                t: 0,
+                sx, sy, cpX, cpY,
+                homeX: slot.x, homeY: slot.y,
+                diveVX: 0, diveVY: 0,
+              });
+            }
+            p.galaSpawnTimer = Math.floor(55 + Math.random() * 55);
+          }
+
+          // Dive timer — send a random patrol alien on a dive run
+          p.galaDiveTimer--;
+          if (p.galaDiveTimer <= 0) {
+            const patrollers = p.galaAliens.filter(a => a.phase === "patrol");
+            if (patrollers.length > 0) {
+              const diver = patrollers[Math.floor(Math.random() * patrollers.length)];
+              diver.phase = "dive";
+              const dx = p.galaCannonX - diver.x + (Math.random() - 0.5) * 22;
+              const dy = cannonY - diver.y;
+              const len = Math.sqrt(dx * dx + dy * dy) || 1;
+              const speed = 1.6 + Math.random() * 0.9;
+              diver.diveVX = (dx / len) * speed;
+              diver.diveVY = (dy / len) * speed;
+            }
+            p.galaDiveTimer = Math.floor(100 + Math.random() * 120);
+          }
+
+          // Update alien positions
+          p.galaAliens = p.galaAliens.filter(a => {
+            if (a.phase === "enter") {
+              a.t = Math.min(1, a.t + 0.016);
+              const mt = 1 - a.t;
+              a.x = mt * mt * a.sx + 2 * mt * a.t * a.cpX + a.t * a.t * a.homeX;
+              a.y = mt * mt * a.sy + 2 * mt * a.t * a.cpY + a.t * a.t * a.homeY;
+              if (a.t >= 1) { a.phase = "patrol"; a.x = a.homeX; a.y = a.homeY; }
+            } else if (a.phase === "patrol") {
+              a.x = a.homeX + p.galaPatrolOffX;
+            } else if (a.phase === "dive") {
+              a.x += a.diveVX;
+              a.y += a.diveVY;
+              // Dive off screen — alien dies (no reward)
+              if (a.y > hh + 14) return false;
+              // Slight curve toward cannon during dive
+              const pullX = p.galaCannonX - a.x;
+              a.diveVX += pullX * 0.002;
+            }
+            return true;
+          });
+
+          // Cannon control
+          if (p.isActive) {
+            p.galaCannonX = clamp((mouse.x - p.cx) / p.scaleX, -hw + 10, hw - 10);
+          } else {
+            // AI: gently track the nearest alien
+            if (p.galaAliens.length > 0) {
+              const nearest = p.galaAliens.reduce((a, b) =>
+                Math.abs(b.x - p.galaCannonX) < Math.abs(a.x - p.galaCannonX) ? b : a
+              );
+              p.galaCannonX = lerp(p.galaCannonX, clamp(nearest.x, -hw + 10, hw - 10), 0.025);
+            }
+          }
+
+          // Auto-fire
+          p.galaFireTimer--;
+          if (p.galaFireTimer <= 0) {
+            p.galaBullets.push({ x: p.galaCannonX, y: cannonY - 8 });
+            p.galaFireTimer = p.isActive ? 32 : 50;
+          }
+
+          // Random bomb drop from diving aliens
+          if (p.galaAliens.some(a => a.phase === "dive") && Math.random() < 0.006) {
+            const divers = p.galaAliens.filter(a => a.phase === "dive");
+            const dr = divers[Math.floor(Math.random() * divers.length)];
+            p.galaBombs.push({ x: dr.x, y: dr.y + 5 });
+          }
+
+          // Move bullets — check alien hit by distance
+          p.galaBullets = p.galaBullets.filter(b => {
+            b.y -= bulletSpeed;
+            if (b.y < contentTop - 4) return false;
+            const hitIdx = p.galaAliens.findIndex(a => dist2(b.x, b.y, a.x, a.y) < 9);
+            if (hitIdx >= 0) {
+              p.galaAliens.splice(hitIdx, 1);
+              p.galaScore++;
+              return false;
+            }
+            return true;
+          });
+
+          // Move bombs
+          p.galaBombs = p.galaBombs.filter(b => {
+            b.y += 1.3;
+            return b.y < cannonY + 10;
           });
         }
 
-        // Panel 1 — ECG waveform
+        // ── Panel 1: Snake ──────────────────────────────────────────────────
         if (i === 1) {
-          const phaseDelta = (p.bpm / 60 / 60) * lerp(1, 1.3, p.activePct);
-          p.ecgPhase = (p.ecgPhase + phaseDelta) % 1.0;
-          p.ecgBuffer[p.ecgWriteIdx % p.ecgBuffer.length] = ecgSample(p.ecgPhase);
-          p.ecgWriteIdx++;
-          if (Math.random() < 0.002) {
-            p.bpm = clamp(p.bpm + (Math.random() > 0.5 ? 1 : -1), 58, 76);
+          const hw = p.w / 2, hh = p.h / 2;
+          const { cw, ch } = snakeCellDims(p.w, p.h);
+          const gridX = -hw + 4;
+          const gridY = -hh + 16;
+
+          if (p.snakeDead) {
+            p.snakeDeadTimer--;
+            if (p.snakeDeadTimer <= 0) {
+              const snk = makeSnakeInit();
+              p.snakeBody = snk.body;
+              p.snakeDir = { x: 1, y: 0 };
+              p.snakeNextDir = { x: 1, y: 0 };
+              p.snakeFood = snk.food;
+              p.snakeDead = false;
+              p.snakeMoveTimer = 18;
+            }
+            return;
+          }
+
+          // Direction from mouse — update every frame for instant responsiveness
+          if (p.isActive) {
+            const head = p.snakeBody[0];
+            // Head position in panel-local coords
+            const headLX = gridX + (head.x + 0.5) * cw;
+            const headLY = gridY + (head.y + 0.5) * ch;
+            const mLX = (mouse.x - p.cx) / p.scaleX;
+            const mLY = mouse.y - p.cy;
+            const ddx = mLX - headLX;
+            const ddy = mLY - headLY;
+            // Require minimum distance to avoid jitter near head
+            if (Math.abs(ddx) > cw * 0.4 || Math.abs(ddy) > ch * 0.4) {
+              let wantDir = { x: 0, y: 0 };
+              if (Math.abs(ddx) > Math.abs(ddy)) {
+                wantDir = { x: ddx > 0 ? 1 : -1, y: 0 };
+              } else {
+                wantDir = { x: 0, y: ddy > 0 ? 1 : -1 };
+              }
+              // Allow any direction except an immediate 180° reverse
+              if (!(wantDir.x === -p.snakeDir.x && wantDir.y === -p.snakeDir.y)) {
+                p.snakeNextDir = wantDir;
+              }
+            }
+          } else {
+            p.snakeNextDir = snakeAIDir(p.snakeBody, p.snakeDir, p.snakeFood);
+          }
+
+          // Move snake on timer
+          p.snakeMoveTimer--;
+          if (p.snakeMoveTimer <= 0) {
+            p.snakeDir = p.snakeNextDir;
+            const head = p.snakeBody[0];
+            const nx = head.x + p.snakeDir.x;
+            const ny = head.y + p.snakeDir.y;
+
+            // Wall collision — dies touching the actual edge cells
+            if (nx < 0 || nx >= SNAKE_COLS || ny < 0 || ny >= SNAKE_ROWS) {
+              p.snakeDead = true; p.snakeDeadTimer = 120;
+              return;
+            }
+            if (p.snakeBody.some(s => s.x === nx && s.y === ny)) {
+              p.snakeDead = true; p.snakeDeadTimer = 120;
+              return;
+            }
+
+            const ateFood = nx === p.snakeFood.x && ny === p.snakeFood.y;
+            const newBody = [{ x: nx, y: ny }, ...p.snakeBody];
+            if (!ateFood) newBody.pop();
+            else {
+              p.snakeScore++;
+              let fx: number, fy: number;
+              do {
+                // Food always 1 cell inside the boundary
+                fx = 1 + Math.floor(Math.random() * (SNAKE_COLS - 2));
+                fy = 1 + Math.floor(Math.random() * (SNAKE_ROWS - 2));
+              } while (newBody.some(s => s.x === fx && s.y === fy));
+              p.snakeFood = { x: fx, y: fy };
+            }
+            p.snakeBody = newBody;
+            p.snakeMoveTimer = p.isActive ? 14 : 18;
           }
         }
 
-        // Panel 2 — workflow packets
+        // ── Panel 2: Breakout ───────────────────────────────────────────────
         if (i === 2) {
-          p.wfPackets.forEach(pk => {
-            pk.t += pk.speed * lerp(1, 2.2, p.activePct);
-            if (pk.t >= 1) {
-              pk.t = 0;
-              pk.edge = Math.floor(Math.random() * WF_EDGES.length);
-              pk.speed = 0.003 + Math.random() * 0.004;
+          const hw = p.w / 2, hh = p.h / 2;
+          const contentTop = -hh + 14;
+          const contentBottom = hh - 18;
+          const brickW = (p.w - 14) / BREAK_COLS;
+          const brickH = 6;
+          const paddleW = p.w * 0.27;
+          const paddleH = 4;
+          const paddleY = contentBottom - 6;
+          const brickAreaTop = contentTop + 4;
+
+          if (p.breakResetTimer > 0) {
+            p.breakResetTimer--;
+            if (p.breakResetTimer === 0) {
+              p.breakBricks = makeBreakGrid();
+              p.breakBallLaunched = false; p.breakLaunchTimer = 60;
+              p.breakBallX = p.breakPaddleX; p.breakBallY = paddleY - 4;
+              p.breakBallVX = 1.8 * (Math.random() > 0.5 ? 1 : -1); p.breakBallVY = -1.8;
+              if (p.breakLives <= 0) { p.breakScore = 0; p.breakLives = 3; }
             }
+            return;
+          }
+
+          if (p.isActive) {
+            p.breakPaddleX = clamp((mouse.x - p.cx) / p.scaleX, -hw + paddleW / 2, hw - paddleW / 2);
+          } else {
+            p.breakPaddleX = lerp(p.breakPaddleX, clamp(p.breakBallX, -hw + paddleW / 2, hw - paddleW / 2), 0.05);
+          }
+
+          if (!p.breakBallLaunched) {
+            p.breakBallX = p.breakPaddleX; p.breakBallY = paddleY - 4;
+            p.breakLaunchTimer--;
+            if (p.breakLaunchTimer <= 0) p.breakBallLaunched = true;
+            return;
+          }
+
+          const ballSpd = lerp(1.0, 1.3, p.activePct);
+          p.breakBallX += p.breakBallVX * ballSpd;
+          p.breakBallY += p.breakBallVY * ballSpd;
+
+          if (p.breakBallX < -hw + 6) { p.breakBallVX = Math.abs(p.breakBallVX); p.breakBallX = -hw + 6; }
+          if (p.breakBallX > hw - 6)  { p.breakBallVX = -Math.abs(p.breakBallVX); p.breakBallX = hw - 6; }
+          if (p.breakBallY < contentTop + 2) { p.breakBallVY = Math.abs(p.breakBallVY); p.breakBallY = contentTop + 2; }
+
+          const paddleHalfW = paddleW / 2;
+          if (
+            p.breakBallY >= paddleY - 4 && p.breakBallY <= paddleY + paddleH &&
+            p.breakBallX >= p.breakPaddleX - paddleHalfW - 3 &&
+            p.breakBallX <= p.breakPaddleX + paddleHalfW + 3
+          ) {
+            p.breakBallVY = -Math.abs(p.breakBallVY);
+            const rel = (p.breakBallX - p.breakPaddleX) / paddleHalfW;
+            p.breakBallVX = rel * 2.2;
+            p.breakBallY = paddleY - 5;
+          }
+
+          if (p.breakBallY > hh) {
+            p.breakLives--;
+            if (p.breakLives <= 0) {
+              p.breakResetTimer = 90;
+            } else {
+              p.breakBallLaunched = false; p.breakLaunchTimer = 50;
+              p.breakBallX = p.breakPaddleX; p.breakBallY = paddleY - 4;
+              p.breakBallVX = 1.8 * (Math.random() > 0.5 ? 1 : -1); p.breakBallVY = -1.8;
+            }
+          }
+
+          for (let row = 0; row < BREAK_ROWS; row++) {
+            for (let col = 0; col < BREAK_COLS; col++) {
+              if (!p.breakBricks[row]?.[col]) continue;
+              const bx = -hw + 7 + col * (brickW + 2 / BREAK_COLS);
+              const by = brickAreaTop + row * (brickH + 3);
+              const bRight = bx + brickW - 1, bBottom = by + brickH;
+              if (
+                p.breakBallX >= bx - 3 && p.breakBallX <= bRight + 3 &&
+                p.breakBallY >= by - 3 && p.breakBallY <= bBottom + 3
+              ) {
+                p.breakBricks[row][col] = false;
+                p.breakScore++;
+                const fromLeft  = Math.abs(p.breakBallX - bx);
+                const fromRight = Math.abs(p.breakBallX - bRight);
+                const fromTop   = Math.abs(p.breakBallY - by);
+                const fromBot   = Math.abs(p.breakBallY - bBottom);
+                const minD = Math.min(fromLeft, fromRight, fromTop, fromBot);
+                if (minD === fromTop || minD === fromBot) p.breakBallVY *= -1;
+                else p.breakBallVX *= -1;
+                for (let k = 0; k < 5; k++) {
+                  p.breakParticles.push({
+                    x: bx + brickW / 2, y: by + brickH / 2,
+                    vx: (Math.random() - 0.5) * 3,
+                    vy: (Math.random() - 0.5) * 3,
+                    life: 0.9 + Math.random() * 0.1,
+                  });
+                }
+              }
+            }
+          }
+
+          p.breakParticles = p.breakParticles.filter(pt => {
+            pt.x += pt.vx; pt.y += pt.vy; pt.life -= 0.05; return pt.life > 0;
           });
+
+          if (!p.breakBricks.some(row => row.some(Boolean))) {
+            p.breakBricks = makeBreakGrid();
+            p.breakBallLaunched = false; p.breakLaunchTimer = 50;
+            p.breakBallX = p.breakPaddleX; p.breakBallY = paddleY - 4;
+            p.breakBallVX = (p.breakBallVX > 0 ? 1 : -1) * Math.min(2.5, 1.8 + p.breakScore * 0.02);
+            p.breakBallVY = -Math.abs(p.breakBallVX) * 0.9;
+          }
         }
 
-        // Panel 3 — gear rotation + bars
+        // ── Panel 3: Missile Command ────────────────────────────────────────
         if (i === 3) {
-          p.angle += 0.006 * spd;
-          p.angle2 -= 0.009 * spd;
-          p.bars.forEach((v, j) => {
-            p.bars[j] = lerp(v, p.barTargets[j], 0.012 * spd);
-            if (Math.abs(p.bars[j] - p.barTargets[j]) < 0.01) {
-              p.barTargets[j] = 0.15 + Math.random() * 0.82;
+          const hw = p.w / 2, hh = p.h / 2;
+          const contentTop = -hh + 14;
+          const cityY = hh - 22;
+          const cityXs = [-hw * 0.50, 0, hw * 0.50];
+
+          if (p.mcGameOverTimer > 0) {
+            p.mcGameOverTimer--;
+            if (p.mcGameOverTimer === 0) {
+              p.mcCities = [true, true, true];
+              p.mcMissiles = []; p.mcInterceptors = [];
+              p.mcWave = 1; p.mcSpawnTimer = 150;
             }
+            return;
+          }
+
+          p.mcSpawnTimer--;
+          if (p.mcSpawnTimer <= 0) {
+            const alive = p.mcCities.map((c, ci) => c ? ci : -1).filter(x => x >= 0);
+            if (alive.length > 0) {
+              const tIdx = alive[Math.floor(Math.random() * alive.length)];
+              const sx = lerp(-hw + 8, hw - 8, Math.random());
+              const sy = contentTop + 2;
+              const tx = cityXs[tIdx] + (Math.random() - 0.5) * 10;
+              p.mcMissiles.push({
+                sx, sy, tx, ty: cityY,
+                x: sx, y: sy, progress: 0,
+                speed: 0.003 + p.mcWave * 0.001 + Math.random() * 0.002,
+              });
+            }
+            const maxM = 2 + p.mcWave;
+            p.mcSpawnTimer = Math.max(60, Math.floor(150 - p.mcWave * 15));
+            if (p.mcMissiles.length >= maxM) p.mcSpawnTimer += 60;
+          }
+
+          p.mcMissiles = p.mcMissiles.filter(m => {
+            m.progress = Math.min(1, m.progress + m.speed);
+            m.x = lerp(m.sx, m.tx, m.progress);
+            m.y = lerp(m.sy, m.ty, m.progress);
+            if (m.progress >= 1) {
+              const ni = cityXs.reduce((best, cx_, ci) =>
+                Math.abs(m.tx - cx_) < Math.abs(m.tx - cityXs[best]) ? ci : best, 0);
+              if (p.mcCities[ni]) {
+                p.mcCities[ni] = false;
+                if (p.mcCities.every(c => !c)) p.mcGameOverTimer = 180;
+              }
+              return false;
+            }
+            return true;
+          });
+
+          // Player fire on click
+          if (p.isActive && mouse.clicked) {
+            const targetX = clamp((mouse.x - p.cx) / p.scaleX, -hw + 4, hw - 4);
+            const targetY = clamp(mouse.y - p.cy, contentTop + 2, cityY - 10);
+            p.mcInterceptors.push({
+              lx: 0, ly: cityY - 5, tx: targetX, ty: targetY,
+              x: 0, y: cityY - 5, progress: 0,
+              exploding: false, explodeRadius: 0,
+              maxExplodeRadius: 20 + Math.random() * 6,
+              lingerTimer: 0,
+            });
+          }
+
+          // AI auto-fire
+          p.mcAutoFireTimer--;
+          if (p.mcAutoFireTimer <= 0 && p.mcMissiles.length > 0) {
+            const target = p.mcMissiles.reduce((a, b) => a.progress > b.progress ? a : b);
+            p.mcInterceptors.push({
+              lx: 0, ly: cityY - 5, tx: target.x, ty: target.y,
+              x: 0, y: cityY - 5, progress: 0,
+              exploding: false, explodeRadius: 0,
+              maxExplodeRadius: 18,
+              lingerTimer: 0,
+            });
+            p.mcAutoFireTimer = Math.floor(90 + Math.random() * 60);
+          }
+
+          // Update interceptors
+          p.mcInterceptors = p.mcInterceptors.filter(ic => {
+            if (!ic.exploding) {
+              // In flight
+              ic.progress = Math.min(1, ic.progress + 0.05);
+              ic.x = lerp(ic.lx, ic.tx, ic.progress);
+              ic.y = lerp(ic.ly, ic.ty, ic.progress);
+              if (ic.progress >= 1) {
+                ic.exploding = true;
+                // Snap to exactly full size immediately, then linger
+                ic.explodeRadius = ic.maxExplodeRadius;
+                ic.lingerTimer = 90; // 1.5 seconds at 60fps
+              }
+            } else if (ic.lingerTimer > 0) {
+              // Linger phase — cloud sits at full radius, killing missiles
+              ic.lingerTimer--;
+              p.mcMissiles = p.mcMissiles.filter(m => {
+                if (dist2(m.x, m.y, ic.x, ic.y) <= ic.explodeRadius) {
+                  p.mcScore++;
+                  if (p.mcScore % 5 === 0) p.mcWave = Math.min(p.mcWave + 1, 8);
+                  return false;
+                }
+                return true;
+              });
+              if (ic.lingerTimer <= 0) return false; // done
+            } else {
+              return false;
+            }
+            return true;
           });
         }
 
-        // Panel 4 — pong simulation
+        // ── Panel 4: Pong ───────────────────────────────────────────────────
         if (i === 4) {
           const hw = p.w / 2, hh = p.h / 2;
-          const paddleH = 11;
-          const paddleX = hw - 7;
+          const paddleH = 11, paddleX = hw - 7;
           const wallB = hh - 16;
 
-          // Right paddle AI
           p.pongPaddleR = lerp(p.pongPaddleR, p.pongBallY, 0.045);
-
-          // Left paddle: mouse-driven when active (exact), else AI
           if (p.isActive) {
             p.pongPaddleL = clamp(mouse.y - p.cy, -hh + paddleH, hh - paddleH);
           } else {
@@ -991,24 +1349,20 @@ export default function JarvisBackground() {
           p.pongPaddleL = clamp(p.pongPaddleL, -hh + paddleH, hh - paddleH);
           p.pongPaddleR = clamp(p.pongPaddleR, -hh + paddleH, hh - paddleH);
 
-          // Move ball
           p.pongBallX += p.pongBallVX * p.pongSpeed;
           p.pongBallY += p.pongBallVY * p.pongSpeed;
 
-          // Wall bounce
           if (p.pongBallY <= -(wallB - 2) || p.pongBallY >= wallB - 2) {
             p.pongBallVY *= -1;
             p.pongBallY = clamp(p.pongBallY, -(wallB - 2), wallB - 2);
           }
 
-          // Left paddle collision
           if (p.pongBallX <= -paddleX + 4 && p.pongBallX > -paddleX &&
               Math.abs(p.pongBallY - p.pongPaddleL) < paddleH) {
             p.pongBallVX = Math.abs(p.pongBallVX);
             p.pongBallVY += (p.pongBallY - p.pongPaddleL) * 0.08;
             p.pongSpeed = Math.min(p.pongSpeed + 0.04, 2.0);
           }
-          // Right paddle collision
           if (p.pongBallX >= paddleX - 4 && p.pongBallX < paddleX &&
               Math.abs(p.pongBallY - p.pongPaddleR) < paddleH) {
             p.pongBallVX = -Math.abs(p.pongBallVX);
@@ -1016,7 +1370,6 @@ export default function JarvisBackground() {
             p.pongSpeed = Math.min(p.pongSpeed + 0.04, 2.0);
           }
 
-          // Score + reset
           if (p.pongBallX < -hw || p.pongBallX > hw) {
             if (p.pongBallX > hw) p.pongScoreL++;
             else p.pongScoreR++;
@@ -1027,7 +1380,6 @@ export default function JarvisBackground() {
           }
         }
 
-        // Pulse ring on cursor entry
         if (p.isActive && !p.wasActive) {
           const startR = Math.max(p.w, p.h) / 2;
           p.pulseRings.push({ age: 0, startR, maxR: startR * 1.5 });
@@ -1036,7 +1388,8 @@ export default function JarvisBackground() {
         p.pulseRings.forEach(r => { r.age += DT; });
       });
 
-      // Particles
+      mouse.clicked = false;
+
       state.particles.forEach((p) => {
         const md = dist2(mouse.x, mouse.y, p.x, p.y);
         if (md < 160 && md > 1) {
@@ -1048,6 +1401,7 @@ export default function JarvisBackground() {
         if (spd > 0.9) { p.vx = (p.vx / spd) * 0.9; p.vy = (p.vy / spd) * 0.9; }
         p.x += p.vx; p.y += p.vy;
         if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+        const H = canvas?.height ?? 1080;
         if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
       });
     }
@@ -1056,29 +1410,17 @@ export default function JarvisBackground() {
       if (!canvas || !ctx) return;
       const W = canvas.width, H = canvas.height;
 
-      // 1. Clear canvas so background image stays visible
       ctx.clearRect(0, 0, W, H);
-
-      // 2. Amber LED glow overlay (animated shimmer on top of real desk LED)
       drawAmberGlowOverlay(ctx, W, H);
-
-      // 3. Panel desk glows
       state.panels.forEach(p => drawPanelDeskGlow(ctx, p, H));
 
-      // 4. Particles
       ctx.fillStyle = "rgba(59, 130, 246, 0.38)";
       state.particles.forEach(p => {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
       });
 
-      // 5. Panel frames + content (with boot flicker and idle flicker)
       state.panels.forEach((p, i) => {
-        // Not booted yet — skip entirely
         if (p.bootAge < 0) return;
-
-        // Booting (0 → 0.6s) — flicker the border only
         if (p.bootAge < 0.6) {
           const bootFlicker = Math.random() > 0.45 ? Math.random() * 0.9 : 0;
           ctx.globalAlpha = bootFlicker;
@@ -1086,8 +1428,6 @@ export default function JarvisBackground() {
           ctx.globalAlpha = 1;
           return;
         }
-
-        // Fully booted — apply idle flicker multiplier
         ctx.globalAlpha = p.flickerMult;
         drawPanelFrame(ctx, p);
         DRAW_FNS[i]?.(ctx, p);
@@ -1095,27 +1435,25 @@ export default function JarvisBackground() {
         ctx.globalAlpha = 1;
       });
 
-      // 6. Pulse rings
       drawPulseRings(ctx, state.panels);
     }
 
-    function loop() {
-      update();
-      draw();
-      raf = requestAnimationFrame(loop);
-    }
+    function loop() { update(); draw(); raf = requestAnimationFrame(loop); }
 
     function onMouseMove(e: MouseEvent) { mouse.x = e.clientX; mouse.y = e.clientY; }
+    function onMouseClick() { mouse.clicked = true; }
     function onResize() { init(); }
 
     init();
     loop();
     window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("click", onMouseClick);
     window.addEventListener("resize", onResize);
 
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("click", onMouseClick);
       window.removeEventListener("resize", onResize);
     };
   }, []);
@@ -1125,10 +1463,8 @@ export default function JarvisBackground() {
       ref={canvasRef}
       style={{
         position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
+        top: 0, left: 0,
+        width: "100vw", height: "100vh",
         zIndex: -1,
         pointerEvents: "none",
         display: "block",
