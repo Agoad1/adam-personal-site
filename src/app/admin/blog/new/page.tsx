@@ -1,5 +1,7 @@
 import BlogEditor from '@/app/admin/components/BlogEditor'
 
+export const dynamic = 'force-dynamic'
+
 export default function NewBlogPostPage() {
   return (
     <div className="space-y-8 pb-12">
