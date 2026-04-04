@@ -19,13 +19,13 @@ export default function Home() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
       {/* Hero */}
       <section className="text-center mb-20">
-        <h1 className="heading-display text-5xl sm:text-7xl mb-4 text-text-primary">
+        <h1 className="heading-display text-4xl sm:text-6xl mb-4 text-text-primary">
           Adam Goad
         </h1>
-        <p className="text-xl sm:text-2xl text-accent-cyan font-medium mb-6">
+        <p className="text-lg sm:text-xl text-accent-cyan font-medium mb-6">
           AI builder. Automation specialist. Systems thinker.
         </p>
-        <p className="max-w-2xl mx-auto text-text-secondary text-lg leading-relaxed mb-8">
+        <p className="max-w-2xl mx-auto text-text-secondary text-base leading-relaxed mb-8">
           Business student at Xavier University graduating May 2026. Building
           Spengo — an AI and automation platform for home service businesses.
           Self-taught developer turning ideas into production systems.
