@@ -30,30 +30,30 @@ export default async function DoorDashWidget() {
 
   return (
     <div className="card flex flex-col gap-3">
-      <h3 className="text-sm font-semibold text-accent uppercase tracking-wider">
+      <h3 className="font-serif text-sm font-bold text-slate-900 uppercase tracking-wider">
         DoorDash Tracker
       </h3>
       <div className="grid grid-cols-3 gap-4 text-center">
         <div>
-          <p className="text-2xl font-bold text-text-primary">
+          <p className="font-mono text-2xl font-bold text-slate-900">
             ${totalEarned.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </p>
-          <p className="text-xs text-text-secondary mt-1">All Time</p>
+          <p className="font-serif text-sm font-bold text-slate-800 mt-1 uppercase tracking-wide">All Time</p>
         </div>
         <div>
-          <p className="text-2xl font-bold text-text-primary">
+          <p className="font-mono text-2xl font-bold text-slate-900">
             ${monthEarned.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </p>
-          <p className="text-xs text-text-secondary mt-1">This Month</p>
+          <p className="font-serif text-sm font-bold text-slate-800 mt-1 uppercase tracking-wide">This Month</p>
         </div>
         <div>
-          <p className="text-2xl font-bold text-text-primary">
+          <p className="font-mono text-2xl font-bold text-slate-900">
             {totalMiles.toLocaleString("en-US", { maximumFractionDigits: 0 })}
           </p>
-          <p className="text-xs text-text-secondary mt-1">Miles</p>
+          <p className="font-serif text-sm font-bold text-slate-800 mt-1 uppercase tracking-wide">Miles</p>
         </div>
       </div>
-      <p className="text-xs text-text-secondary mt-1">
+      <p className="font-serif text-xs font-semibold text-slate-700 mt-1 text-center">
         Real data. Updated manually.
       </p>
     </div>
