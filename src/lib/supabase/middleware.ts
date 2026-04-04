@@ -34,11 +34,12 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // Protect admin routes
-  if (request.nextUrl.pathname.startsWith('/admin') && !request.nextUrl.pathname.startsWith('/admin/login')) {
-    if (!user) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/admin/login'
-      return NextResponse.redirect(url)
+  if (request.nextUrl.pathname.startsWith('/admin')) {
+    const adminEmail = process.env.ADMIN_EMAIL
+
+    if (!user || user.email !== adminEmail) {
+      // Rewrite to a bogus URL to trigger Next.js default 404 page gracefully
+      return NextResponse.rewrite(new URL('/this-page-does-not-exist', request.url))
     }
   }
 
