@@ -17,7 +17,7 @@ function WidgetSkeleton() {
 
 export default function Home() {
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-16">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-16">
       {/* Hero */}
       <section className="relative text-center mb-[25vh]">
         {/* Removed radial backdrop for a cleaner, editorial look */}
