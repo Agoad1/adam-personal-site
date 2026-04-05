@@ -177,4 +177,42 @@
     border-radius: 0.5rem;
     margin: 1em 0;
   }
+
+  /* DoorDash page background */
+  .doordash-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background-color: #fafaf8;
+    pointer-events: none;
+  }
+
+  .doordash-bg::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 70% 60% at 50% 30%, rgba(251, 146, 60, 0.18) 0%, transparent 70%),
+      radial-gradient(ellipse 50% 40% at 0% 80%, rgba(59, 130, 246, 0.10) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 100% 10%, rgba(59, 130, 246, 0.08) 0%, transparent 60%);
+  }
+
+  /* DoorDash giant background card */
+  .doordash-panel {
+    background: linear-gradient(150deg, rgba(224, 242, 254, 0.90) 0%, rgba(255, 237, 213, 0.90) 100%);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 1.5rem;
+    box-shadow: 0 12px 60px rgba(0, 0, 0, 0.10), 0 0 80px rgba(251, 146, 60, 0.06);
+  }
+
+  /* Inner data cards on the doordash page */
+  .doordash-card {
+    background: rgba(255, 255, 255, 0.70);
+    border: 1px solid rgba(255, 255, 255, 0.90);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  }
 }
