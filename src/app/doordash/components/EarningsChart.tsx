@@ -50,17 +50,17 @@ export default function EarningsChart({ logs }: Props) {
   const dataKey = 'label'
 
   return (
-    <div className="card space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-serif text-sm font-bold text-slate-900 uppercase tracking-wider">Earnings History</h3>
-        <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
+        <h3 className="font-serif text-sm font-bold text-slate-300 uppercase tracking-wider">Earnings History</h3>
+        <div className="flex gap-1 bg-white/5 border border-white/10 rounded-lg p-0.5">
           <button
             onClick={() => setView('weekly')}
-            className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'weekly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'weekly' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-slate-200'}`}
           >Weekly</button>
           <button
             onClick={() => setView('monthly')}
-            className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'monthly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'monthly' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-slate-200'}`}
           >Monthly</button>
         </div>
       </div>
@@ -70,12 +70,12 @@ export default function EarningsChart({ logs }: Props) {
       ) : (
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
-            <XAxis dataKey={dataKey} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+            <XAxis dataKey={dataKey} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
             <Tooltip
               formatter={(v: unknown) => [`$${Number(v).toFixed(2)}`, 'Earned']}
-              contentStyle={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 8, fontSize: 12 }}
+              contentStyle={{ background: 'rgba(6,12,26,0.95)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 8, fontSize: 12, color: '#f1f5f9' }}
             />
             <Bar dataKey="income" fill="url(#earningsGrad)" radius={[4, 4, 0, 0]} />
             <defs>

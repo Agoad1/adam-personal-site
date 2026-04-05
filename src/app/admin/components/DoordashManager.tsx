@@ -40,6 +40,8 @@ export default function DoordashManager({ initialLogs }: { initialLogs: Doordash
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Manual form state
+  const [manualLogType, setManualLogType] = useState<'week' | 'session'>('week')
+  const [screenshotLogType, setScreenshotLogType] = useState<'week' | 'session'>('session')
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     income: '',
@@ -87,6 +89,7 @@ export default function DoordashManager({ initialLogs }: { initialLogs: Doordash
       hours: formData.hours ? parseFloat(formData.hours) : null,
       trips: formData.trips ? parseInt(formData.trips) : null,
       notes: formData.notes || null,
+      log_type: manualLogType,
     }])
     setIsSubmitting(false)
     setFormData({ date: new Date().toISOString().split('T')[0], income: '', miles: '', expenses: '', hours: '', trips: '', notes: '' })
@@ -138,6 +141,7 @@ export default function DoordashManager({ initialLogs }: { initialLogs: Doordash
       hours: parsed.active_hours,
       trips: parsed.trips,
       notes: `Active: ${parsed.active_hours}h / Dash: ${parsed.dash_hours}h`,
+      log_type: screenshotLogType,
     }]).select('id').single()
 
     if (logData?.id && parsedDeliveries.length > 0) {
@@ -214,10 +218,23 @@ export default function DoordashManager({ initialLogs }: { initialLogs: Doordash
       {activeTab === 'manual' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 bg-zinc-900 border border-zinc-800 rounded-xl p-6 h-fit">
-            <h2 className="text-xl font-bold text-white mb-6">Log New Shift</h2>
+            <h2 className="text-xl font-bold text-white mb-4">Log New Shift</h2>
+
+            {/* Log type toggle */}
+            <div className="flex gap-1 bg-zinc-950 border border-zinc-800 rounded-lg p-0.5 mb-6">
+              {(['week', 'session'] as const).map(t => (
+                <button key={t} type="button" onClick={() => setManualLogType(t)}
+                  className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors ${manualLogType === t ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white'}`}>
+                  {t === 'week' ? '📅 Weekly Summary' : '🚗 Single Session'}
+                </button>
+              ))}
+            </div>
+
             <form onSubmit={handleManualSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Date</label>
+                <label className="block text-sm text-zinc-400 mb-1">
+                  {manualLogType === 'week' ? 'Week Starting (Monday)' : 'Date'}
+                </label>
                 <input type="date" name="date" value={formData.date} onChange={handleChange} required
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500/50 outline-none" />
               </div>
@@ -343,6 +360,16 @@ export default function DoordashManager({ initialLogs }: { initialLogs: Doordash
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
               <h2 className="text-xl font-bold text-white">Review & Confirm</h2>
               <p className="text-sm text-zinc-400">Edit any fields before saving.</p>
+
+              {/* Log type toggle */}
+              <div className="flex gap-1 bg-zinc-950 border border-zinc-800 rounded-lg p-0.5">
+                {(['session', 'week'] as const).map(t => (
+                  <button key={t} type="button" onClick={() => setScreenshotLogType(t)}
+                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors ${screenshotLogType === t ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white'}`}>
+                    {t === 'week' ? '📅 Weekly Summary' : '🚗 Single Session'}
+                  </button>
+                ))}
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
