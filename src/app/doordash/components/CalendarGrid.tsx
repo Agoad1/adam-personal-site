@@ -34,7 +34,7 @@ export default function CalendarGrid({ workedDates }: Props) {
 
   return (
     <div className="space-y-4">
-      <h3 className="font-serif text-sm font-bold text-slate-300 uppercase tracking-wider">Days Worked</h3>
+      <h3 className="font-serif text-sm font-bold text-black uppercase tracking-wider">Days Worked</h3>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         {months.map(({ year, month }) => {
           const days = getDaysInMonth(year, month)
@@ -43,10 +43,10 @@ export default function CalendarGrid({ workedDates }: Props) {
 
           return (
             <div key={`${year}-${month}`} className="space-y-2">
-              <p className="font-serif text-xs font-bold text-slate-400 uppercase tracking-wide text-center">{label}</p>
+              <p className="font-serif text-xs font-bold text-black uppercase tracking-wide text-center">{label}</p>
               <div className="grid grid-cols-7 gap-0.5">
                 {['S','M','T','W','T','F','S'].map((d, i) => (
-                  <div key={i} className="text-center text-xs text-slate-500 font-semibold pb-1">{d}</div>
+                  <div key={i} className="text-center text-xs text-black/40 font-semibold pb-1">{d}</div>
                 ))}
                 {Array.from({ length: firstDay }, (_, i) => <div key={`e-${i}`} />)}
                 {Array.from({ length: days }, (_, i) => {
@@ -60,8 +60,8 @@ export default function CalendarGrid({ workedDates }: Props) {
                       title={worked ? `Logged: ${dateStr}` : dateStr}
                       className={`
                         aspect-square flex items-center justify-center rounded text-xs font-medium transition-colors
-                        ${worked ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/40' : 'text-slate-500 hover:text-slate-300'}
-                        ${isToday && !worked ? 'ring-1 ring-blue-400/60 text-slate-300' : ''}
+                        ${worked ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/40' : 'text-black/40 hover:text-black'}
+                        ${isToday && !worked ? 'ring-1 ring-blue-500/60 text-black' : ''}
                       `}
                     >
                       {day}

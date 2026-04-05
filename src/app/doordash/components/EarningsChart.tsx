@@ -52,36 +52,36 @@ export default function EarningsChart({ logs }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-serif text-sm font-bold text-slate-300 uppercase tracking-wider">Earnings History</h3>
-        <div className="flex gap-1 bg-white/5 border border-white/10 rounded-lg p-0.5">
+        <h3 className="font-serif text-sm font-bold text-black uppercase tracking-wider">Earnings History</h3>
+        <div className="flex gap-1 bg-slate-100 border border-slate-200 rounded-lg p-0.5">
           <button
             onClick={() => setView('weekly')}
-            className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'weekly' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'weekly' ? 'bg-white text-black shadow-sm' : 'text-black/50 hover:text-black'}`}
           >Weekly</button>
           <button
             onClick={() => setView('monthly')}
-            className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'monthly' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'monthly' ? 'bg-white text-black shadow-sm' : 'text-black/50 hover:text-black'}`}
           >Monthly</button>
         </div>
       </div>
 
       {data.length === 0 ? (
-        <p className="text-slate-500 text-sm text-center py-8">No data yet.</p>
+        <p className="text-black/50 text-sm text-center py-8">No data yet.</p>
       ) : (
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={260}>
           <BarChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-            <XAxis dataKey={dataKey} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+            <XAxis dataKey={dataKey} tick={{ fontSize: 11, fill: '#000000' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: '#000000' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
             <Tooltip
               formatter={(v: unknown) => [`$${Number(v).toFixed(2)}`, 'Earned']}
-              contentStyle={{ background: 'rgba(6,12,26,0.95)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 8, fontSize: 12, color: '#f1f5f9' }}
+              contentStyle={{ background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(0,0,0,0.10)', borderRadius: 8, fontSize: 12, color: '#000000' }}
             />
             <Bar dataKey="income" fill="url(#earningsGrad)" radius={[4, 4, 0, 0]} />
             <defs>
               <linearGradient id="earningsGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3b82f6" />
-                <stop offset="100%" stopColor="#06b6d4" />
+                <stop offset="0%" stopColor="#f97316" />
+                <stop offset="100%" stopColor="#3b82f6" />
               </linearGradient>
             </defs>
           </BarChart>
